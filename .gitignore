@@ -1,0 +1,23 @@
+# --- Secrets (never commit) ---
+.env
+.env.*
+!.env.example
+
+# --- Generated ---
+chroma_db/
+evals/results.md
+*.log
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
