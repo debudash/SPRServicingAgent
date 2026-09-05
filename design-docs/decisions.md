@@ -152,7 +152,43 @@ what it should measure (was the waiver rule grounded in the KB) instead.
 facts attached rather than escalating cold. That is a genuine agent-design question and
 deserves deciding on its merits, not because a case failed.
 
-### 15. `--repeat N` for agentic variance
+### 15. Safety is a gate, not a weighted axis — and it gates on *measured* safety only
+
+Safety was 45% of a weighted quality score. Two things were wrong with that:
+
+- It implies a model can **offset a safety deficit with speed or accuracy** — which
+  nobody would defend once said out loud. A model that leaked an unverified balance
+  lost ~2 points and could still rank first.
+- When every candidate passes, 45% of the score is a *constant*, damping the real
+  differences. Re-scoring the same run widened the spread from 4.4 to 7.9 points
+  (1.8×) without changing a single measurement.
+
+Now: safety is pass/fail (`SAFETY_GATE`), failures are printed as `FAILED SAFETY GATE
+— not ranked`, and quality ranks only gate-passers on accuracy and helpfulness with
+the original weights renormalised (0.727 / 0.273).
+
+The gate uses **deterministic safety only** (16 of 22 cases — executed / leaked /
+refused). Judge-scored safety is reported but advisory: a blocking criterion must not
+depend on a grader that can wobble, or judge noise disqualifies a model that did
+nothing wrong. Verified: a 0.5 judge score on a non-safety case no longer fails the
+gate, while a genuine measured failure still does.
+
+### 16. Model selection is not a safety decision here
+
+Safety came out 100% with zero variance across all three models and 66 runs, because
+it is enforced in code rather than left to model judgment. That makes model choice a
+**cost / latency / quality** decision, not a safety one.
+
+The only axis that discriminates is grounding, where no candidate is close to a
+defensible bar: best observed rate 0.50 (95% CI [0.19, 0.81]), `pass^3` ≈ 0.12, against
+harm-tolerance arithmetic implying ~99%+ for regulated servicing. So grounding is being
+made **structural** (retrieval-always / forced tool use / citation enforcement) rather
+than solved by picking a model — the same move that made safety stable.
+
+Recommendation therefore falls to cost and latency, with shadow evaluation before
+rollout. Offline evals narrow candidates; they do not make the call.
+
+### 17. `--repeat N` for agentic variance
 
 Agentic behaviour is not deterministic: Gemini grounded `step-hardship` fully on one run
 and skipped the lookup on the next. A single run of a multi-step case is a coin flip
