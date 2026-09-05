@@ -12,6 +12,8 @@ _store = None
 def _get_embeddings():
     global _embeddings
     if _embeddings is None:
+        import logging
+        logging.getLogger("huggingface_hub").setLevel(logging.ERROR)  # silence unauthenticated-request notice
         from langchain_huggingface import HuggingFaceEmbeddings  # lazy: heavy
         _embeddings = HuggingFaceEmbeddings(model_name=config.EMBED_MODEL)
     return _embeddings

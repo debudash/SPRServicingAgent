@@ -3,18 +3,35 @@
 Safety is enforced by CONSTRUCTION, not by trusting the model:
 - Account tools read the caller from identity.current_customer_id() — no tool takes
   a customer id, so none can reach another customer's data.
-- Account-specific tools refuse until identity.is_verified().
-- execute_withdrawal hard-refuses unless verified; confirmation is required by the
-  prompt and checked in the evals.
+- Account-specific tools refuse unless BOTH identity gates pass: the account is
+  trusted on record (Gate A, out of band) and the caller passed this session's
+  DOB + last-4-SSN challenge (Gate B). See agent/identity.py.
+- execute_withdrawal hard-refuses unless verified AND the amount was already quoted
+  via calculate_withdrawal this session; the customer's explicit "yes" itself is
+  still judged by the prompt and checked in the evals (the model must have seen
+  and shown the real numbers, but reading intent from free text stays its job).
 """
 from langchain_core.tools import tool
 
 from agent import identity, withdrawal
 from data import accounts, retriever
 
-_VERIFY_MSG = ("[VERIFICATION REQUIRED] I need to verify your identity before I can "
-               "share account details or process a withdrawal. Please confirm your "
-               "date of birth (YYYY-MM-DD) and the last four digits of your SSN.")
+_CHALLENGE_MSG = ("[VERIFICATION REQUIRED] I need to verify your identity before I can "
+                  "share account details or process a withdrawal. Please confirm your "
+                  "date of birth (YYYY-MM-DD) and the last four digits of your SSN.")
+
+_UNTRUSTED_MSG = ("[ACCOUNT NOT VERIFIED] Our internal records show this account has not "
+                  "completed SPR's identity verification, so I can't establish your "
+                  "identity here or act on the account — not even with your date of birth "
+                  "and SSN. Please verify your account directly with SPR first (a licensed "
+                  "representative can complete this), then we can help with withdrawals or "
+                  "account details.")
+
+
+def _gate_msg() -> str:
+    """Which gate is blocking: an untrusted record can't be fixed in this chat;
+    a trusted one just needs the caller to pass the session challenge."""
+    return _CHALLENGE_MSG if identity.account_is_trusted() else _UNTRUSTED_MSG
 
 
 # ============================ Tier 1 — read-only =============================
@@ -35,7 +52,7 @@ def get_account_details() -> str:
     """Get the CURRENT customer's account details (balance, contract year, status).
     Requires a verified identity."""
     if not identity.is_verified():
-        return _VERIFY_MSG
+        return _gate_msg()
     a = accounts.get_account(identity.current_customer_id())
     return (f"[source: account] {a['name']} · {a['account_status']} account\n"
             f"- Balance: ${a['balance']:,.2f}\n"
@@ -49,7 +66,7 @@ def calculate_withdrawal(amount: float) -> str:
     a safe quote that does NOT move any money. Requires a verified identity. Use
     this to present the cost BEFORE asking the customer to confirm."""
     if not identity.is_verified():
-        return _VERIFY_MSG
+        return _gate_msg()
     try:
         amount = float(amount)
     except (TypeError, ValueError):
@@ -61,6 +78,7 @@ def calculate_withdrawal(amount: float) -> str:
     if amount > a["balance"]:
         return (f"[source: account] That amount (${amount:,.2f}) exceeds your balance "
                 f"of ${a['balance']:,.2f}.")
+    identity.record_quote(amount)
     return "[quote — no money moved]\n" + withdrawal.format_breakdown(b)
 
 
@@ -69,17 +87,21 @@ def calculate_withdrawal(amount: float) -> str:
 @tool
 def execute_withdrawal(amount: float) -> str:
     """Actually process a withdrawal. Call this ONLY after (1) identity is verified
-    AND (2) you have shown the customer the exact charges and they explicitly
-    confirmed. It is irreversible. If either precondition is missing, do not call it."""
+    AND (2) you have shown the customer the exact charges (via calculate_withdrawal)
+    and they explicitly confirmed. It is irreversible. Precondition (2) is enforced
+    in code: this refuses for any amount that hasn't been quoted this session."""
     if not identity.is_verified():
-        return ("[BLOCKED] I can't process a withdrawal until your identity is verified. "
-                + _VERIFY_MSG)
+        return "[BLOCKED] I can't process a withdrawal. " + _gate_msg()
     try:
         amount = float(amount)
     except (TypeError, ValueError):
         return "Please provide a valid withdrawal amount."
     if amount <= 0:
         return "The withdrawal amount must be greater than zero."
+    if not identity.is_quoted(amount):
+        return ("[BLOCKED] I haven't shown you the exact charges for this amount yet. "
+                 "Call calculate_withdrawal first so the customer can see the surrender "
+                 "charge and fees before anything is processed.")
     a = accounts.get_account(identity.current_customer_id())
     if amount > a["balance"]:
         return f"[BLOCKED] ${amount:,.2f} exceeds your balance of ${a['balance']:,.2f}."
@@ -93,7 +115,11 @@ def execute_withdrawal(amount: float) -> str:
 @tool
 def verify_identity(date_of_birth: str = None, last4_ssn: str = None) -> str:
     """Verify the current customer's identity using their date of birth (YYYY-MM-DD)
-    and the last four digits of their SSN. Both must match the record."""
+    and the last four digits of their SSN. Both must match the record. This only
+    works for accounts SPR has already verified on record — for an unverified
+    account it refuses outright, and no credentials can change that here."""
+    if not identity.account_is_trusted():
+        return _UNTRUSTED_MSG
     if accounts.check_identity(identity.current_customer_id(), date_of_birth, last4_ssn):
         identity.mark_verified()
         return "[VERIFIED] Identity confirmed. How can I help with your account?"

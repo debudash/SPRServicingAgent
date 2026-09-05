@@ -1,14 +1,15 @@
 """Tri-tier guardrail model — agent design as risk management.
 
 Two orthogonal controls:
-  * IDENTITY (agent/identity.py) — account-specific tools refuse until the caller
-    is verified; the model can't set this itself.
+  * IDENTITY (agent/identity.py) — two gates in series, neither settable by the
+    model: the account must be verified on SPR's records (Gate A, out of band) AND
+    the caller must pass this session's DOB + last-4-SSN challenge (Gate B).
   * RISK TIER (here) — how much autonomy an action gets.
 
-  Tier 1  read-only advisory          -> autonomous (but account reads need verify)
-  Tier 2  verification                -> the identity gate itself
-  Tier 3  high-risk / irreversible    -> execute_withdrawal: verified + explicit
-                                         confirmation, else refuse/escalate
+  Tier 1  read-only advisory          -> autonomous (but account reads need both gates)
+  Tier 2  verification                -> the session challenge itself (Gate B)
+  Tier 3  high-risk / irreversible    -> execute_withdrawal: both gates + the amount
+                                         already quoted, else refuse/escalate
 """
 TIER_1 = "read_only"
 TIER_2 = "verification"

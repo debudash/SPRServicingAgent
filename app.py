@@ -54,6 +54,8 @@ def main():
 
     if st.session_state.get("ctx") != (cid, model):
         st.session_state.ctx = (cid, model)
+        # login first: new_messages() reads the session's identity state.
+        identity.login(cid)  # once per session, not per turn — verification should persist across messages
         st.session_state.messages = react_agent.new_messages()
         st.session_state.history = []
 
@@ -75,7 +77,6 @@ def main():
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    identity.login(cid)  # re-establish session identity each turn
     st.session_state.messages.append(HumanMessage(prompt))
     with st.chat_message("assistant"):
         try:
