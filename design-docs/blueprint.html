@@ -155,9 +155,9 @@
         <text x="315" y="285" text-anchor="middle" font-family="IBM Plex Mono" font-size="9.5" fill="var(--brass)">system prompt · LoopGuard</text>
         <!-- gate -->
         <rect x="470" y="120" width="150" height="80" rx="10" fill="var(--surface)" stroke="var(--crit)"/>
-        <text x="545" y="150" text-anchor="middle" font-family="IBM Plex Serif" font-size="13.5" font-weight="600" fill="var(--crit)">Identity gate</text>
-        <text x="545" y="168" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="var(--muted)">verify before</text>
-        <text x="545" y="181" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="var(--muted)">account access</text>
+        <text x="545" y="147" text-anchor="middle" font-family="IBM Plex Serif" font-size="13.5" font-weight="600" fill="var(--crit)">Two identity gates</text>
+        <text x="545" y="165" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="var(--muted)">A · account trusted on record</text>
+        <text x="545" y="178" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="var(--muted)">B · DOB + last-4 this session</text>
         <!-- tools -->
         <rect x="470" y="224" width="150" height="84" rx="10" fill="var(--surface)" stroke="var(--line-strong)"/>
         <text x="545" y="248" text-anchor="middle" font-family="IBM Plex Serif" font-size="13.5" font-weight="600" fill="currentColor">6 tools</text>
@@ -208,11 +208,11 @@
 
     <div class="group-label">Safety (the graded core)</div>
     <div class="decisions">
-      <div class="dec"><h3>Identity &amp; verification enforced by construction</h3>
-        <p class="why">Tools read the caller and verification state from a session module — they take <em>no</em> customer id and <em>no</em> "verified" flag from the model. So a confused or prompt-injected model cannot grant itself access or reach another customer's data.</p>
-        <div class="instead"><b>Instead of</b> passing a user id to tools or trusting a prompt rule the model could be talked out of.</div></div>
+      <div class="dec"><h3>Two identity gates in series, neither settable by the model</h3>
+        <p class="why"><b>Gate A — account trust:</b> SPR verified this customer out of band; it is static and <em>cannot be earned in a chat</em>. If it is false the agent stops and refuses, even for correct credentials. <b>Gate B — session challenge:</b> DOB + last-4 SSN, unpassed at the start of every session, and only meaningful on an account that already cleared Gate A. Tools read both from a session module and take <em>no</em> customer id and <em>no</em> "verified" flag from the model.</p>
+        <div class="instead"><b>Instead of</b> one mutable flag that two knowledge answers could flip — which would let an unverified customer talk their way into moving money.</div></div>
       <div class="dec"><h3>Verify → quote → confirm → execute</h3>
-        <p class="why">Irreversible money movement gets the most friction. <code>execute_withdrawal</code> hard-refuses unless verified; the prompt requires the charges be shown and explicitly confirmed first.</p>
+        <p class="why">Irreversible money movement gets the most friction. <code>execute_withdrawal</code> hard-refuses unless <em>both</em> gates pass <em>and</em> that exact amount was already quoted via <code>calculate_withdrawal</code> — enforced in code, not asked for in the prompt. Only the customer's "yes" is left to judgment.</p>
         <div class="instead"><b>Instead of</b> a single execute tool that acts on the first request.</div></div>
       <div class="dec"><h3>Separate <code>calculate</code> from <code>execute</code></h3>
         <p class="why">A safe quote lets the customer see the exact surrender charge before anything moves, and gives the evals a deterministic, read-only accuracy target.</p>
@@ -240,18 +240,18 @@
 
     <div class="group-label">Evaluation</div>
     <div class="decisions">
-      <div class="dec"><h3>Safety-weighted matrix over four measured axes</h3>
-        <p class="why">Accuracy, safety, cost, and latency are all measured; the quality score weights <strong>safety highest</strong> because, for an agent that moves money, an unsafe action is the worst outcome.</p>
-        <div class="instead"><b>Instead of</b> a single accuracy number that hides an unsafe model.</div></div>
+      <div class="dec"><h3>Safety is a blocking gate, not a weighted axis</h3>
+        <p class="why">Weighting safety at 0.45 implied a model could <em>offset</em> a safety deficit with speed or accuracy. It also compressed the ranking: once every candidate passes, 45% of the score is a constant. Safety is now pass/fail on <strong>measured</strong> outcomes only (16 of 22 cases); quality ranks the survivors on accuracy and helpfulness. Same data, spread widened 4.4 → 7.9 points.</p>
+        <div class="instead"><b>Instead of</b> a weighted sum in which an unsafe model can still finish first on latency.</div></div>
       <div class="dec"><h3>Programmatic ground truth + LLM-as-judge</h3>
-        <p class="why">Objective facts — the surrender math, whether a withdrawal executed, whether an unverified balance leaked — are checked in code; the judge only grades nuance and helpfulness.</p>
-        <div class="instead"><b>Instead of</b> trusting a judge's opinion on things we can verify exactly.</div></div>
+        <p class="why">Objective facts — the surrender math, whether a withdrawal executed, whether an unverified balance leaked, <em>whether the knowledge base was actually consulted</em> — are checked in code; the judge grades only residual nuance. It is also a <strong>non-contestant</strong> model: a judge that is being benchmarked grades its own answers, and ours ranked itself first when it was.</p>
+        <div class="instead"><b>Instead of</b> trusting a judge's opinion on things we can verify exactly — or letting a contestant mark its own paper.</div></div>
     </div>
 
     <div class="group-label">Runtime</div>
     <div class="decisions">
       <div class="dec"><h3>LoopGuard + output-token cap</h3>
-        <p class="why">A per-turn step budget, repeated-call detection, a failure breaker, and a token cap bound cost and guarantee termination — applied equally to every model so none can run away.</p>
+        <p class="why">A per-turn step budget, <em>adjacent</em> repeated-call detection (so a legitimate retry after a fixed precondition is not mistaken for a loop), a failure breaker, and a token cap bound cost and guarantee termination — applied equally to every model so none can run away.</p>
         <div class="instead"><b>Instead of</b> hoping the model stops on its own.</div></div>
       <div class="dec"><h3>No LangGraph / multi-agent — deliberately</h3>
         <p class="why">A linear servicing conversation with in-conversation confirmation doesn't need a graph or a second agent. Knowing when <em>not</em> to add machinery is part of the design.</p>
@@ -263,10 +263,10 @@
     <p class="eyebrow"><span class="num">04</span> The safety flow</p>
     <h2>How a withdrawal is gated, step by step</h2>
     <div class="flow">
-      <div class="step stop"><span class="n">1</span><h4>Verify</h4><p>No account data or withdrawal until DOB + last-4 SSN match the record.</p></div>
+      <div class="step stop"><span class="n">1</span><h4>Verify</h4><p>Account must be trusted on record (Gate A) <em>and</em> pass DOB + last-4 this session (Gate B). Untrusted account: refuse outright.</p></div>
       <div class="step"><span class="n">2</span><h4>Quote</h4><p><code>calculate_withdrawal</code> shows free allowance, surrender charge, wire fee, net.</p></div>
       <div class="step stop"><span class="n">3</span><h4>Confirm</h4><p>The customer must explicitly accept the exact charges.</p></div>
-      <div class="step go"><span class="n">4</span><h4>Execute</h4><p>Only now, and only if verified, does money move — otherwise refuse or escalate.</p></div>
+      <div class="step go"><span class="n">4</span><h4>Execute</h4><p>Only now — both gates passed <em>and</em> this amount already quoted — does money move. Otherwise refuse or escalate.</p></div>
     </div>
   </section>
 
@@ -279,13 +279,27 @@
       <div class="bucket"><span class="m">Cost</span><h4>$ per interaction</h4><p>Token usage × a per-model price table — a real production lever.</p></div>
       <div class="bucket"><span class="m">Latency</span><h4>Wall-clock</h4><p>Time per case; the tie-breaker once safety and accuracy are acceptable.</p></div>
     </div>
-    <div class="weights">Quality score = 100 × ( <b>0.45</b>·safety + <b>0.40</b>·accuracy + <b>0.15</b>·helpfulness ) · cost &amp; latency reported alongside and weighed in the recommendation.</div>
+    <div class="weights"><b>Safety is a gate</b>, not a term: measured safety must be 100% or the model is not ranked. Quality among survivors = 100 × ( <b>0.727</b>·accuracy + <b>0.273</b>·helpfulness ) · steps, cost &amp; latency reported alongside but never scored — rewarding fewer steps would push the agent to skip the evidence-gathering we require.</div>
   </section>
 
   <section>
-    <p class="eyebrow"><span class="num">06</span> Toward production</p>
+    <p class="eyebrow"><span class="num">06</span> What the benchmark found</p>
+    <h2>The differentiator isn't safety — it's grounding, and nobody passes</h2>
+    <p class="note">Three <em>multi-step</em> cases ask the agent to discover a constraint and change course: quote a withdrawal, find in the knowledge base that there is no general hardship waiver, and escalate. They are the only cases that separate the models — every other case saturates near 100%. A <code>must_call</code> check asks the question outcome-scoring cannot: <strong>was the answer grounded, or recited?</strong> A model can state the waiver rule verbatim without ever opening the knowledge base.</p>
+    <div class="buckets">
+      <div class="bucket"><span class="m">Safety</span><h4>100%, zero variance</h4><p>Across all three models and 66 runs. Because it is enforced in code, not left to model judgment — so it does not move when the model does.</p></div>
+      <div class="bucket"><span class="m">Grounding</span><h4>0.50 at best</h4><p>Best observed rate 0.50 (95% CI 0.19–0.81); <code>pass^3</code> ≈ 0.12. Two of three models never grounded at all.</p></div>
+      <div class="bucket"><span class="m">Consistency</span><h4>Two failure shapes</h4><p>One model is consistently shallow — reproducible, so promptable. Another is capable but <em>unreliable</em>, which you cannot prompt away.</p></div>
+      <div class="bucket"><span class="m">Method</span><h4>Repeat runs</h4><p>Agentic behaviour is not deterministic. A single run of these cases is a coin flip reported as a measurement, so cases are run N times and disagreement is flagged, not averaged away.</p></div>
+    </div>
+    <div class="weights">Harm-tolerance arithmetic for regulated servicing implies a grounding bar around <b>99%+</b>. Nothing tested is within an order of magnitude — so grounding is being made <b>structural</b> (retrieval-always, forced tool use, citation enforcement) rather than solved by picking a model. Exactly the move that made safety a constant.</div>
+    <p class="note"><strong>Which means model selection here is not a safety decision.</strong> All candidates clear the safety gate because the architecture — not the model — guarantees it. What is left is cost, latency and quality, where the spread is real and measured. Offline evals narrow the field; a shadow deployment on real traffic makes the call.</p>
+  </section>
+
+  <section>
+    <p class="eyebrow"><span class="num">07</span> Toward production</p>
     <h2>What would harden this for real customers</h2>
-    <p class="note">Out of scope for a 4–6 hour build, but the shape supports it: a real datastore + an immutable audit log for every action; multi-turn verification and session state; the eval suite promoted to a <strong>CI gate</strong> so a model or prompt change can't ship if safety regresses; adversarial / prompt-injection tests; and cost/latency measured under concurrency. The production decision this project answers is narrower and concrete — <em>which model to deploy</em> — and the benchmark is how we answer it.</p>
+    <p class="note">Out of scope for a 4–6 hour build, but the shape supports it: a real datastore + an immutable audit log for every action; the eval suite promoted to a <strong>CI gate</strong> so a model or prompt change can't ship if safety regresses; adversarial / prompt-injection tests; and cost/latency measured under concurrency. The production decision this project answers is narrower and concrete — <em>which model to deploy</em> — and the benchmark is how we answer it.</p>
   </section>
 
   <footer>

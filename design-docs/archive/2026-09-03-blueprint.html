@@ -1,0 +1,295 @@
+<title>SPR Servicing Agent Blueprint</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --ground: #EAEEF3; --surface: #FFFFFF; --surface-2: #F4F6F9;
+    --ink: #14202E; --muted: #566372; --faint: #7C8896;
+    --line: #D3DBE4; --line-strong: #B9C4CF;
+    --accent: #1F4E79; --accent-soft: #E4ECF4;
+    --brass: #9A711F; --brass-soft: #F1E8D3;
+    --good: #2E7D5B; --good-soft: #E1F0E8;
+    --crit: #A9432B; --crit-soft: #F6E3DC;
+    --shadow: 0 1px 2px rgba(20,32,46,.06), 0 8px 24px rgba(20,32,46,.05);
+  }
+  :root:not([data-theme="light"]) { @media (prefers-color-scheme: dark) {
+    --ground: #0C141F; --surface: #121D2A; --surface-2: #0F1926;
+    --ink: #E7ECF2; --muted: #9EACBB; --faint: #6E7D8D;
+    --line: #263341; --line-strong: #33434F;
+    --accent: #74A9DA; --accent-soft: #172C40;
+    --brass: #D6B15E; --brass-soft: #2A2415;
+    --good: #5FC095; --good-soft: #14261E;
+    --crit: #E08064; --crit-soft: #2C1913;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+  } }
+  :root[data-theme="dark"] {
+    --ground: #0C141F; --surface: #121D2A; --surface-2: #0F1926;
+    --ink: #E7ECF2; --muted: #9EACBB; --faint: #6E7D8D;
+    --line: #263341; --line-strong: #33434F;
+    --accent: #74A9DA; --accent-soft: #172C40;
+    --brass: #D6B15E; --brass-soft: #2A2415;
+    --good: #5FC095; --good-soft: #14261E;
+    --crit: #E08064; --crit-soft: #2C1913;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px 96px; }
+
+  .masthead { border-bottom: 1px solid var(--line);
+    background: radial-gradient(120% 140% at 88% -20%, var(--accent-soft) 0%, transparent 55%), var(--surface); }
+  .masthead .wrap { padding-top: 44px; padding-bottom: 32px; }
+  .kicker { font-family: "IBM Plex Mono", monospace; font-size: 12px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--brass); margin: 0 0 14px; }
+  h1.title { font-family: "IBM Plex Serif", Georgia, serif; font-weight: 700;
+    font-size: clamp(28px, 5vw, 44px); line-height: 1.08; letter-spacing: -.01em; margin: 0 0 14px; text-wrap: balance; }
+  .lede { font-size: 18px; color: var(--muted); max-width: 64ch; margin: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .chip { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; padding: 5px 10px;
+    border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); background: var(--surface); }
+
+  section { margin-top: 52px; }
+  .eyebrow { display: flex; align-items: center; gap: 12px; font-family: "IBM Plex Mono", monospace;
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); margin: 0 0 10px; }
+  .eyebrow .num { color: var(--brass); font-weight: 600; }
+  .eyebrow::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  h2 { font-family: "IBM Plex Serif", Georgia, serif; font-weight: 600; font-size: clamp(22px, 3vw, 28px);
+    letter-spacing: -.01em; margin: 0 0 12px; text-wrap: balance; }
+  p { margin: 0 0 14px; } p.note { color: var(--muted); max-width: 68ch; }
+  strong { font-weight: 600; } .accent-word { color: var(--accent); font-weight: 600; }
+
+  figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    padding: 22px 22px 14px; box-shadow: var(--shadow); overflow-x: auto; }
+  figure svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 14px; text-align: center; font-family: "IBM Plex Mono", monospace; }
+
+  /* thesis callout */
+  .thesis { border-left: 3px solid var(--crit); background: var(--crit-soft); padding: 16px 20px;
+    border-radius: 0 8px 8px 0; font-size: 16px; margin-top: 6px; }
+  .thesis strong { color: var(--ink); }
+
+  /* decision cards */
+  .group-label { font-family: "IBM Plex Mono", monospace; font-size: 12px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--brass); margin: 26px 0 12px; }
+  .decisions { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .dec { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px;
+    box-shadow: var(--shadow); border-top: 3px solid var(--accent); }
+  .dec h3 { font-family: "IBM Plex Serif", serif; font-size: 17px; font-weight: 600; margin: 0 0 8px; }
+  .dec .why { font-size: 14.5px; color: var(--muted); margin: 0 0 10px; }
+  .dec .instead { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--brass);
+    border-top: 1px solid var(--line); padding-top: 9px; }
+  .dec .instead b { color: var(--faint); font-weight: 500; }
+
+  /* flow steps */
+  .flow { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; margin-top: 6px; }
+  .step { flex: 1; min-width: 150px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px 16px; }
+  .step .n { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--brass); }
+  .step h4 { margin: 4px 0 4px; font-size: 15px; } .step p { margin: 0; font-size: 13px; color: var(--muted); }
+  .step.stop { border-top: 3px solid var(--crit); } .step.go { border-top: 3px solid var(--good); }
+
+  .buckets { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 6px; }
+  .bucket { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 15px 18px; }
+  .bucket h4 { margin: 0 0 4px; font-size: 15px; } .bucket p { margin: 0; font-size: 13.5px; color: var(--muted); }
+  .bucket .m { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--brass);
+    letter-spacing: .06em; text-transform: uppercase; display: block; margin-bottom: 6px; }
+  .weights { margin-top: 14px; font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--muted);
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; }
+  .weights b { color: var(--accent); }
+
+  footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 13px;
+    color: var(--faint); font-family: "IBM Plex Mono", monospace; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+  @media (max-width: 720px) { .decisions, .buckets { grid-template-columns: 1fr; } }
+</style>
+
+<header class="masthead">
+  <div class="wrap">
+    <p class="kicker">Architecture Blueprint · Internal</p>
+    <h1 class="title">SPR Financials — AI Servicing Agent</h1>
+    <p class="lede">A tool-calling agent for the SecureGrowth Fixed Annuity, and the evaluation suite that decides which LLM to deploy. This document records the <span class="accent-word">architecture and the reasoning behind each decision</span>.</p>
+    <div class="chips">
+      <span class="chip">LangChain · tool-calling</span>
+      <span class="chip">GPT-4o · Gemini · Claude</span>
+      <span class="chip">Chroma · RAG</span>
+      <span class="chip">accounts.json</span>
+      <span class="chip">LLM-as-judge evals</span>
+      <span class="chip">Streamlit + CLI</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section>
+    <p class="eyebrow"><span class="num">01</span> The problem</p>
+    <h2>Service the customer — but know when <em>not</em> to act</h2>
+    <p class="note">The agent runs a servicing conversation end to end: verify the customer, answer product questions grounded in the knowledge base, quote and process withdrawals, and escalate when it shouldn't act alone. These actions carry real financial and regulatory consequence.</p>
+    <div class="thesis"><strong>The governing principle:</strong> an agent that confidently executes a withdrawal it had no business executing is a more serious failure than one that asks a clarifying question too many. Every decision below is weighed against that.</div>
+  </section>
+
+  <section>
+    <p class="eyebrow"><span class="num">02</span> System architecture</p>
+    <h2>One legible loop, two sources of truth, a gate in front of money</h2>
+    <figure>
+      <svg viewBox="0 0 900 430" role="img" aria-label="Architecture: the customer talks to a tool-calling agent loop governed by a system prompt and a LoopGuard; an identity/verification gate wraps account access; tools read product narrative from a Chroma knowledge base and authoritative numbers from accounts.json; the same loop runs on GPT-4o, Gemini, and Claude.">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker>
+        </defs>
+        <!-- customer -->
+        <rect x="24" y="176" width="120" height="72" rx="10" fill="var(--surface-2)" stroke="var(--line-strong)"/>
+        <text x="84" y="206" text-anchor="middle" font-family="IBM Plex Sans" font-size="14" font-weight="600" fill="currentColor">Customer</text>
+        <text x="84" y="225" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" fill="var(--muted)">servicing chat</text>
+        <!-- agent -->
+        <rect x="208" y="120" width="214" height="188" rx="12" fill="var(--accent-soft)" stroke="var(--accent)"/>
+        <text x="315" y="146" text-anchor="middle" font-family="IBM Plex Serif" font-size="15" font-weight="600" fill="var(--accent)">Agent loop</text>
+        <text x="315" y="164" text-anchor="middle" font-family="IBM Plex Mono" font-size="9.5" fill="var(--muted)">LangChain · model-swappable</text>
+        <path d="M262 196 A46 46 0 1 1 260 230" fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ah)"/>
+        <text x="315" y="206" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" fill="currentColor">Thought → Act</text>
+        <text x="315" y="221" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" fill="currentColor">→ Observe</text>
+        <rect x="224" y="266" width="182" height="30" rx="7" fill="var(--surface)" stroke="var(--brass)" stroke-dasharray="4 3"/>
+        <text x="315" y="285" text-anchor="middle" font-family="IBM Plex Mono" font-size="9.5" fill="var(--brass)">system prompt · LoopGuard</text>
+        <!-- gate -->
+        <rect x="470" y="120" width="150" height="80" rx="10" fill="var(--surface)" stroke="var(--crit)"/>
+        <text x="545" y="150" text-anchor="middle" font-family="IBM Plex Serif" font-size="13.5" font-weight="600" fill="var(--crit)">Identity gate</text>
+        <text x="545" y="168" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="var(--muted)">verify before</text>
+        <text x="545" y="181" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="var(--muted)">account access</text>
+        <!-- tools -->
+        <rect x="470" y="224" width="150" height="84" rx="10" fill="var(--surface)" stroke="var(--line-strong)"/>
+        <text x="545" y="248" text-anchor="middle" font-family="IBM Plex Serif" font-size="13.5" font-weight="600" fill="currentColor">6 tools</text>
+        <text x="545" y="266" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="var(--muted)">read · verify</text>
+        <text x="545" y="279" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="var(--muted)">execute · escalate</text>
+        <text x="545" y="295" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="var(--brass)">tiered by risk</text>
+        <!-- stores -->
+        <rect x="676" y="120" width="200" height="80" rx="10" fill="var(--surface)" stroke="var(--brass)"/>
+        <text x="776" y="150" text-anchor="middle" font-family="IBM Plex Serif" font-size="13.5" font-weight="600" fill="var(--brass)">Knowledge base</text>
+        <text x="776" y="168" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="var(--muted)">Chroma RAG · narrative</text>
+        <text x="776" y="184" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="var(--muted)">product · fees · FAQ</text>
+        <rect x="676" y="224" width="200" height="80" rx="10" fill="var(--surface)" stroke="var(--accent)"/>
+        <text x="776" y="254" text-anchor="middle" font-family="IBM Plex Serif" font-size="13.5" font-weight="600" fill="var(--accent)">accounts.json</text>
+        <text x="776" y="272" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="var(--muted)">authoritative · numbers</text>
+        <text x="776" y="288" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="var(--muted)">balances · identity</text>
+        <!-- arrows -->
+        <g fill="none" stroke="currentColor" stroke-width="1.6">
+          <line x1="144" y1="212" x2="206" y2="212" marker-end="url(#ah)"/>
+          <line x1="422" y1="176" x2="468" y2="164" marker-end="url(#ah)"/>
+          <line x1="422" y1="250" x2="468" y2="262" marker-end="url(#ah)"/>
+          <line x1="620" y1="262" x2="674" y2="170" marker-end="url(#ah)"/>
+          <line x1="620" y1="266" x2="674" y2="262" marker-end="url(#ah)"/>
+        </g>
+        <text x="712" y="205" text-anchor="middle" font-family="IBM Plex Mono" font-size="8.5" fill="var(--brass)">grounding</text>
+        <text x="648" y="256" text-anchor="middle" font-family="IBM Plex Mono" font-size="8.5" fill="var(--accent)">numbers</text>
+      </svg>
+      <figcaption>Fig 1 — the same loop runs on all three models; the identity gate and the tiered tools sit between the model and any account action.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <p class="eyebrow"><span class="num">03</span> Key architectural decisions</p>
+    <h2>What we chose, why, and what we rejected</h2>
+    <p class="note">Each card is a decision we can defend under questioning: the choice, the reason, and the alternative we deliberately turned down.</p>
+
+    <div class="group-label">Agent</div>
+    <div class="decisions">
+      <div class="dec"><h3>LLM tool-calling for intent + parameters</h3>
+        <p class="why">The model detects intent and extracts typed arguments (amounts, IDs) into structured JSON the framework validates. Robust across phrasings.</p>
+        <div class="instead"><b>Instead of</b> keyword routing / regex extraction — brittle, and prone to keyword-persistence loops and parsing bugs like a stray leading space.</div></div>
+      <div class="dec"><h3>Hand-written loop, not a black-box executor</h3>
+        <p class="why">We control every step, so we can wire the LoopGuard, capture the reasoning trace, and track token usage — and explain it line by line.</p>
+        <div class="instead"><b>Instead of</b> a prebuilt AgentExecutor whose control flow we couldn't narrate or instrument.</div></div>
+      <div class="dec"><h3>One model interface (<code>get_model</code>)</h3>
+        <p class="why">The identical agent, prompt, and tools run on GPT-4o / Gemini / Claude, so the benchmark is a fair, apples-to-apples comparison. Swapping is one word.</p>
+        <div class="instead"><b>Instead of</b> per-provider code paths that would confound the comparison.</div></div>
+    </div>
+
+    <div class="group-label">Safety (the graded core)</div>
+    <div class="decisions">
+      <div class="dec"><h3>Identity &amp; verification enforced by construction</h3>
+        <p class="why">Tools read the caller and verification state from a session module — they take <em>no</em> customer id and <em>no</em> "verified" flag from the model. So a confused or prompt-injected model cannot grant itself access or reach another customer's data.</p>
+        <div class="instead"><b>Instead of</b> passing a user id to tools or trusting a prompt rule the model could be talked out of.</div></div>
+      <div class="dec"><h3>Verify → quote → confirm → execute</h3>
+        <p class="why">Irreversible money movement gets the most friction. <code>execute_withdrawal</code> hard-refuses unless verified; the prompt requires the charges be shown and explicitly confirmed first.</p>
+        <div class="instead"><b>Instead of</b> a single execute tool that acts on the first request.</div></div>
+      <div class="dec"><h3>Separate <code>calculate</code> from <code>execute</code></h3>
+        <p class="why">A safe quote lets the customer see the exact surrender charge before anything moves, and gives the evals a deterministic, read-only accuracy target.</p>
+        <div class="instead"><b>Instead of</b> computing and executing in one irreversible step.</div></div>
+      <div class="dec"><h3>Refuse / escalate on doubt</h3>
+        <p class="why">Ambiguity, hesitation, hardship waivers, or anything out of scope routes to <code>escalate_to_human</code> rather than a guess. No personalized financial advice.</p>
+        <div class="instead"><b>Instead of</b> optimizing for task completion at the cost of a wrong action.</div></div>
+    </div>
+
+    <div class="group-label">Data &amp; grounding</div>
+    <div class="decisions">
+      <div class="dec"><h3>Two sources of truth, routed deliberately</h3>
+        <p class="why">Numbers (balances, fees) come only from <code>accounts.json</code> and the fee schedule; product narrative comes from the RAG knowledge base. Numbers never come from RAG or model memory.</p>
+        <div class="instead"><b>Instead of</b> letting the model answer product facts or figures from memory — the fast path to a hallucinated balance.</div></div>
+      <div class="dec"><h3>Withdrawal math = a pure function, shared with evals</h3>
+        <p class="why">The exact surrender-charge formula lives in one place that both the tool and the eval harness import, so there is zero drift between what the agent computes and what we grade.</p>
+        <div class="instead"><b>Instead of</b> duplicating the math, or leaving arithmetic to the LLM.</div></div>
+      <div class="dec"><h3>Plain-JSON data layer, no database</h3>
+        <p class="why">Four provided records. A thin JSON reader is the most faithful choice and runs from a clean checkout with zero setup — which the assignment explicitly values.</p>
+        <div class="instead"><b>Instead of</b> standing up a database for four rows.</div></div>
+      <div class="dec"><h3>Local offline embeddings + embedded Chroma</h3>
+        <p class="why">Sentence-transformers + a local Chroma store need no extra API key and run offline, keeping the whole project self-contained.</p>
+        <div class="instead"><b>Instead of</b> a hosted embedding/vector service and another key to manage.</div></div>
+    </div>
+
+    <div class="group-label">Evaluation</div>
+    <div class="decisions">
+      <div class="dec"><h3>Safety-weighted matrix over four measured axes</h3>
+        <p class="why">Accuracy, safety, cost, and latency are all measured; the quality score weights <strong>safety highest</strong> because, for an agent that moves money, an unsafe action is the worst outcome.</p>
+        <div class="instead"><b>Instead of</b> a single accuracy number that hides an unsafe model.</div></div>
+      <div class="dec"><h3>Programmatic ground truth + LLM-as-judge</h3>
+        <p class="why">Objective facts — the surrender math, whether a withdrawal executed, whether an unverified balance leaked — are checked in code; the judge only grades nuance and helpfulness.</p>
+        <div class="instead"><b>Instead of</b> trusting a judge's opinion on things we can verify exactly.</div></div>
+    </div>
+
+    <div class="group-label">Runtime</div>
+    <div class="decisions">
+      <div class="dec"><h3>LoopGuard + output-token cap</h3>
+        <p class="why">A per-turn step budget, repeated-call detection, a failure breaker, and a token cap bound cost and guarantee termination — applied equally to every model so none can run away.</p>
+        <div class="instead"><b>Instead of</b> hoping the model stops on its own.</div></div>
+      <div class="dec"><h3>No LangGraph / multi-agent — deliberately</h3>
+        <p class="why">A linear servicing conversation with in-conversation confirmation doesn't need a graph or a second agent. Knowing when <em>not</em> to add machinery is part of the design.</p>
+        <div class="instead"><b>Instead of</b> reaching for orchestration the problem doesn't call for.</div></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow"><span class="num">04</span> The safety flow</p>
+    <h2>How a withdrawal is gated, step by step</h2>
+    <div class="flow">
+      <div class="step stop"><span class="n">1</span><h4>Verify</h4><p>No account data or withdrawal until DOB + last-4 SSN match the record.</p></div>
+      <div class="step"><span class="n">2</span><h4>Quote</h4><p><code>calculate_withdrawal</code> shows free allowance, surrender charge, wire fee, net.</p></div>
+      <div class="step stop"><span class="n">3</span><h4>Confirm</h4><p>The customer must explicitly accept the exact charges.</p></div>
+      <div class="step go"><span class="n">4</span><h4>Execute</h4><p>Only now, and only if verified, does money move — otherwise refuse or escalate.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow"><span class="num">05</span> Evaluation methodology</p>
+    <h2>Four axes, ground-truth where it exists</h2>
+    <div class="buckets">
+      <div class="bucket"><span class="m">Accuracy</span><h4>Numbers &amp; facts</h4><p>Exact-match on surrender math and balances; judge for product answers (incl. the Year-5 = 3% trap).</p></div>
+      <div class="bucket"><span class="m">Safety</span><h4>When not to act</h4><p>Did it execute a withdrawal it shouldn't? Leak an unverified balance? Give advice? Checked in code.</p></div>
+      <div class="bucket"><span class="m">Cost</span><h4>$ per interaction</h4><p>Token usage × a per-model price table — a real production lever.</p></div>
+      <div class="bucket"><span class="m">Latency</span><h4>Wall-clock</h4><p>Time per case; the tie-breaker once safety and accuracy are acceptable.</p></div>
+    </div>
+    <div class="weights">Quality score = 100 × ( <b>0.45</b>·safety + <b>0.40</b>·accuracy + <b>0.15</b>·helpfulness ) · cost &amp; latency reported alongside and weighed in the recommendation.</div>
+  </section>
+
+  <section>
+    <p class="eyebrow"><span class="num">06</span> Toward production</p>
+    <h2>What would harden this for real customers</h2>
+    <p class="note">Out of scope for a 4–6 hour build, but the shape supports it: a real datastore + an immutable audit log for every action; multi-turn verification and session state; the eval suite promoted to a <strong>CI gate</strong> so a model or prompt change can't ship if safety regresses; adversarial / prompt-injection tests; and cost/latency measured under concurrency. The production decision this project answers is narrower and concrete — <em>which model to deploy</em> — and the benchmark is how we answer it.</p>
+  </section>
+
+  <footer>
+    <span>SPR Servicing Agent · Architecture Blueprint</span>
+    <span>Internal · keep private</span>
+  </footer>
+</div>
