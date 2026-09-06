@@ -5,7 +5,6 @@
 
 # --- Generated ---
 chroma_db/
-evals/results.md
 *.log
 
 # --- Python ---
@@ -21,6 +20,3 @@ env/
 Thumbs.db
 .vscode/
 .idea/
-
-# --- Assignment brief (do not publish) ---
-problemstmt/

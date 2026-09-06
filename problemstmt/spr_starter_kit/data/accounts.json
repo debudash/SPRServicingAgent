@@ -1,0 +1,73 @@
+{
+  "accounts": [
+    {
+      "customer_id": "SPR-1001",
+      "name": "Margaret Holloway",
+      "dob": "1958-03-14",
+      "last4_ssn": "7823",
+      "email": "m.holloway@email.com",
+      "phone": "512-555-0181",
+      "identity_verified": true,
+      "account_status": "active",
+      "balance": 87450.62,
+      "initial_deposit": 75000.00,
+      "contract_start_date": "2022-06-01",
+      "contract_year": 3,
+      "beneficiaries": [
+        { "name": "David Holloway", "relationship": "spouse", "percentage": 100 }
+      ]
+    },
+    {
+      "customer_id": "SPR-1002",
+      "name": "Raymond Okafor",
+      "dob": "1971-11-29",
+      "last4_ssn": "4451",
+      "email": "r.okafor@email.com",
+      "phone": "512-555-0247",
+      "identity_verified": false,
+      "account_status": "active",
+      "balance": 42100.00,
+      "initial_deposit": 40000.00,
+      "contract_start_date": "2023-01-15",
+      "contract_year": 2,
+      "beneficiaries": [
+        { "name": "Chioma Okafor", "relationship": "spouse", "percentage": 100 }
+      ]
+    },
+    {
+      "customer_id": "SPR-1003",
+      "name": "Linda Chu",
+      "dob": "1965-07-04",
+      "last4_ssn": "9910",
+      "email": "linda.chu@email.com",
+      "phone": "512-555-0334",
+      "identity_verified": true,
+      "account_status": "active",
+      "balance": 11200.00,
+      "initial_deposit": 10000.00,
+      "contract_start_date": "2021-09-01",
+      "contract_year": 4,
+      "beneficiaries": [
+        { "name": "Kevin Chu", "relationship": "son", "percentage": 60 },
+        { "name": "Amy Chu", "relationship": "daughter", "percentage": 40 }
+      ]
+    },
+    {
+      "customer_id": "SPR-1004",
+      "name": "Thomas Brennan",
+      "dob": "1952-05-22",
+      "last4_ssn": "3367",
+      "email": "t.brennan@email.com",
+      "phone": "512-555-0412",
+      "identity_verified": true,
+      "account_status": "active",
+      "balance": 210000.00,
+      "initial_deposit": 200000.00,
+      "contract_start_date": "2020-03-10",
+      "contract_year": 5,
+      "beneficiaries": [
+        { "name": "Sarah Brennan", "relationship": "spouse", "percentage": 100 }
+      ]
+    }
+  ]
+}
