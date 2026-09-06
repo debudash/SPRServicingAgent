@@ -79,8 +79,9 @@ instead of the model.
 
 ### 7. Programmatic wherever there is ground truth; the judge only for nuance
 
-Every axis the LLM judge scores carries run-to-run variance, and safety carries the
-heaviest weight (0.45). Deterministic checks: `expected_numbers`, `must_call`,
+Every axis the LLM judge scores carries run-to-run variance, and safety is the axis that
+blocks deployment (decision 15) — so it must not rest on a grader that wobbles.
+Deterministic checks: `expected_numbers`, `must_call`,
 `must_mention`, `must_execute` / `must_not_execute`, `must_not_reveal`.
 
 All are **symmetric** — a case that demonstrably passes scores 1.0 rather than silently
@@ -104,8 +105,8 @@ This is the sharpest discriminator in the suite: gpt-4o produced correct figures
 
 An unparseable judge reply yields `None`, is retried once, and is excluded from averages
 — never scored 0.0. Scoring it as zero made a *harness* failure indistinguishable from a
-model doing something unsafe, on the most heavily weighted axis. A rate-limited judge
-once cost a model 12 points this way.
+model doing something unsafe — on what was then the most heavily weighted axis, and is
+now the gate. A rate-limited judge once cost a model 12 points this way.
 
 A model with judge failures is marked **NOT COMPARABLE** and the winner line is
 suppressed: it was scored on fewer axes than the others, so it isn't a ranking.
@@ -185,8 +186,18 @@ harm-tolerance arithmetic implying ~99%+ for regulated servicing. So grounding i
 made **structural** (retrieval-always / forced tool use / citation enforcement) rather
 than solved by picking a model — the same move that made safety stable.
 
-Recommendation therefore falls to cost and latency, with shadow evaluation before
-rollout. Offline evals narrow candidates; they do not make the call.
+Recommendation therefore falls to cost and latency, which point to **GPT-4o** — cheapest
+per case and ~3× faster than Gemini. Gemini ranks first on quality, but that lead is
+almost entirely the grounding cases, where its own rate (0.50) is nowhere near a
+deployable bar; selecting for it means picking the least-bad model at something being
+fixed in code anyway. The two models' weaknesses also differ in kind: Gemini's is
+run-to-run *inconsistency*, which no prompt fixes, while GPT-4o's is a reproducible gap
+in escalation helpfulness (`escalate`, `step-hardship`), which is promptable. Selection
+is a two-way door — swapping models is one word.
+
+Conditions: force retrieval in code first, re-run the suite after (the one change that
+could reopen the choice), and shadow-evaluate before live traffic. Offline evals narrow
+candidates; they do not make the call.
 
 ### 17. `--repeat N` for agentic variance
 
@@ -194,6 +205,26 @@ Agentic behaviour is not deterministic: Gemini grounded `step-hardship` fully on
 and skipped the lookup on the next. A single run of a multi-step case is a coin flip
 reported as a measurement. `--repeat` averages N runs and flags cases where runs
 disagreed (`VARIED across runs`) rather than hiding it in the mean.
+
+### 18. Three test levels, cheapest first — and a known gap is not a failure
+
+`scripts/smoke_test.py` (no API key) proves the *code*: both gates, the quote-before-execute
+rule, the math. `scripts/demo.py` (~25s, one model) proves the *behaviour*: six scenarios
+checked programmatically, no judge. `evals/benchmark.py` (minutes, three models) picks a
+model. Each level is a different question, so each is worth running separately.
+
+The demo's scenarios and checks live in one place and are imported by both the CLI and the
+Streamlit page, the same way `withdrawal.py` is shared by the tool and the eval harness —
+two surfaces, one definition, no drift.
+
+The escalation scenario **fails** on gpt-4o: it answers the hardship-waiver rule from memory
+without opening the knowledge base. It is marked `known_gap`, printed as `GAP` rather than
+`FAIL`, and excluded from the exit code.
+
+**Rejected:** relaxing the check so the demo runs clean. The scenario is the most interesting
+thing the evals found, and weakening the assertion to get a green run is teaching to the test
+(decision 14). Marking it keeps the demo honest *and* keeps the exit code meaningful — a real
+regression still turns the run red.
 
 ---
 

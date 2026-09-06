@@ -14,6 +14,8 @@ from agent import guardrails, identity, react_agent
 from data import accounts
 from llm import model_names
 
+st.set_page_config(page_title="SPR Servicing Agent", page_icon="🏦", layout="wide")
+
 TIER_COLOR = {guardrails.TIER_1: "#2E7D5B", guardrails.TIER_2: "#1F6FB2",
               guardrails.TIER_3: "#A9432B", guardrails.HANDOFF: "#7A5AA6"}
 
@@ -35,41 +37,54 @@ def render_trace(trace):
             st.warning(f"⛔ Guardrail: {payload}")
 
 
-def main():
-    st.set_page_config(page_title="SPR Servicing Agent", page_icon="🏦", layout="wide")
-
+def chat_page():
     ids = accounts.all_customer_ids()
     labels = {cid: f"{cid} · {accounts.get_account(cid)['name']} "
                    f"({'verified' if accounts.get_account(cid)['identity_verified'] else 'UNVERIFIED'})"
               for cid in ids}
+    # Both start unselected: a session belongs to a customer, and nothing should be
+    # logged in until someone chooses one.
     with st.sidebar:
         st.header("SPR Servicing Agent")
-        cid = st.selectbox("Customer (session)", ids, format_func=lambda c: labels[c])
-        model = st.selectbox("Model", model_names(),
-                             index=model_names().index("claude") if "claude" in model_names() else 0)
+        cid = st.selectbox("Customer (session)", [None] + ids,
+                           format_func=lambda c: labels[c] if c else "— none —")
+        model = st.selectbox("Model", [None] + model_names(),
+                             format_func=lambda m: m if m else "— none —")
         st.caption("Try: “What's my balance?”, “What's the charge to withdraw $20,000?”, "
                    "then “withdraw $20,000”. Log in as the UNVERIFIED customer to see the gate.")
         if st.button("Reset conversation"):
             st.session_state.pop("history", None); st.session_state.pop("messages", None)
 
+    ready = bool(cid and model)
+
     if st.session_state.get("ctx") != (cid, model):
         st.session_state.ctx = (cid, model)
-        # login first: new_messages() reads the session's identity state.
-        identity.login(cid)  # once per session, not per turn — verification should persist across messages
-        st.session_state.messages = react_agent.new_messages()
         st.session_state.history = []
+        st.session_state.messages = []
+        if ready:
+            # login first: new_messages() reads the session's identity state.
+            identity.login(cid)  # once per session, not per turn — verification should persist across messages
+            st.session_state.messages = react_agent.new_messages()
+        else:
+            identity.logout()
 
     st.title("SPR Financials — Servicing Agent")
-    st.caption(f"Session: **{labels[cid]}** · model **{model}**")
+    st.caption(f"Session: **{labels[cid] if cid else 'none'}** · model **{model or 'none'}**")
 
-    for turn in st.session_state.history:
+    if not ready:
+        missing = " and ".join(x for x in ("a customer" if not cid else "",
+                                           "a model" if not model else "") if x)
+        st.info(f"Select {missing} in the sidebar to start a session.")
+
+    for turn in st.session_state.get("history", []):
         with st.chat_message(turn["role"]):
             st.markdown(turn["content"])
             if turn.get("trace"):
                 with st.expander("Under the hood — reasoning trace"):
                     render_trace(turn["trace"])
 
-    prompt = st.chat_input("Ask about the product, your account, or a withdrawal…")
+    prompt = st.chat_input("Ask about the product, your account, or a withdrawal…",
+                           disabled=not ready)
     if not prompt:
         return
 
@@ -91,5 +106,9 @@ def main():
     st.session_state.history.append({"role": "assistant", "content": answer, "trace": trace})
 
 
-if __name__ == "__main__":
-    main()
+PAGES = [
+    st.Page(chat_page, title="Agent app", icon="🏦", default=True),
+    st.Page("pages/1_Behaviour_demo.py", title="Behaviour demo", icon="🧪"),
+]
+
+st.navigation(PAGES).run()

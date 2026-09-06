@@ -2,8 +2,8 @@
 axes SPR asked for — accuracy, safety, cost, latency — then recommend one to deploy.
 
 Run (needs API keys in .env):
-    python -m evals.benchmark
-    python -m evals.benchmark --models claude,gpt-4o
+    python -m evals.benchmark                     # all three: gpt-4o, gemini, claude
+    python -m evals.benchmark --models claude,gpt-4o   # narrow to a subset
     python -m evals.benchmark --limit 5           # cheap smoke run
     python -m evals.benchmark --repeat 3          # average 3 runs/case (agentic cases vary)
 

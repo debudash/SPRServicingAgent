@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 400" width="1240" height="400" role="img" aria-label="Architecture: the customer logs in and talks to a model-swappable tool-calling agent governed by two identity gates and a LoopGuard; six risk-tiered tools read authoritative numbers from accounts.json and product narrative from a Chroma knowledge base.">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#9EACBB"/>
+    </marker>
+    <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#74A9DA"/>
+    </marker>
+    <style>
+      .t  { font-family: 'IBM Plex Serif', Georgia, serif; font-weight: 600; }
+      .m  { font-family: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace; }
+      .fg { fill: #E7ECF2; }
+      .mu { fill: #9EACBB; }
+      .ac { fill: #74A9DA; }
+      .br { fill: #D6B15E; }
+      .cr { fill: #E08064; }
+    </style>
+  </defs>
+
+  <rect width="1240" height="400" fill="#0E1621"/>
+
+  <!-- customer -->
+  <rect x="30" y="163" width="170" height="86" rx="10" fill="#121D2A" stroke="#33434F"/>
+  <text class="t fg"  x="115" y="200" text-anchor="middle" font-size="17">Customer</text>
+  <text class="m mu"  x="115" y="223" text-anchor="middle" font-size="11">servicing chat</text>
+
+  <!-- customer -> agent -->
+  <line x1="200" y1="206" x2="296" y2="206" stroke="#9EACBB" stroke-width="1.6" marker-end="url(#ah)"/>
+  <text class="m br" x="248" y="196" text-anchor="middle" font-size="11">login</text>
+
+  <!-- agent -->
+  <rect x="300" y="38" width="340" height="330" rx="12" fill="#172C40" stroke="#74A9DA"/>
+  <text class="t ac" x="470" y="76"  text-anchor="middle" font-size="20">Agent</text>
+  <!-- loop glyph: a near-full circular arrow, so "loop" reads before any label does.
+       Built from a circle with a dash gap (pathLength=100 keeps it renderer-independent)
+       plus an explicit arrowhead — an A-command arc leaves the centre ambiguous. -->
+  <circle cx="415" cy="70" r="10" fill="none" stroke="#74A9DA" stroke-width="2"
+          pathLength="100" stroke-dasharray="83 17"/>
+  <polygon points="423.3,63.1 417.1,63.1 419.9,57.9" fill="#74A9DA"/>
+  <text class="m mu" x="470" y="99"  text-anchor="middle" font-size="11">LangChain · <tspan class="ac" font-weight="700">tool-calling loop</tspan></text>
+
+  <rect x="326" y="120" width="288" height="46" rx="8" fill="#0F1926" stroke="#74A9DA"/>
+  <text class="m fg" x="470" y="149" text-anchor="middle" font-size="13">GPT-4o · Gemini · Claude</text>
+
+  <rect x="326" y="192" width="288" height="66" rx="8" fill="#0F1926" stroke="#74A9DA"/>
+  <text class="m fg" x="470" y="216" text-anchor="middle" font-size="11.5">gate A · account trusted (record)</text>
+  <text class="m fg" x="470" y="240" text-anchor="middle" font-size="11.5">gate B · DOB + last-4 (session)</text>
+
+  <rect x="326" y="276" width="288" height="46" rx="8" fill="#0F1926" stroke="#D6B15E" stroke-dasharray="4 3"/>
+  <text class="m br" x="470" y="305" text-anchor="middle" font-size="11.5">LoopGuard · 8 steps · token cap</text>
+
+  <text class="m ac" x="470" y="348" text-anchor="middle" font-size="11">reason → act → observe → repeat</text>
+
+  <!-- agent &lt;-&gt; tools: the cycle, drawn as a cycle -->
+  <path d="M640 172 C 668 154, 690 154, 714 168" fill="none" stroke="#74A9DA" stroke-width="2"
+        stroke-linecap="round" marker-end="url(#ahb)"/>
+  <path d="M714 258 C 690 272, 668 272, 642 254" fill="none" stroke="#74A9DA" stroke-width="2"
+        stroke-linecap="round" marker-end="url(#ahb)"/>
+  <text class="m ac" x="677" y="145" text-anchor="middle" font-size="10.5">act</text>
+  <text class="m ac" x="677" y="290" text-anchor="middle" font-size="10.5">observe</text>
+
+  <!-- tools -->
+  <rect x="720" y="88" width="250" height="242" rx="10" fill="#121D2A" stroke="#33434F"/>
+  <text class="t fg" x="845" y="122" text-anchor="middle" font-size="17">Tools</text>
+  <line x1="744" y1="138" x2="946" y2="138" stroke="#33434F" stroke-width="1"/>
+  <text class="m fg" x="744" y="166" font-size="11.5">search_knowledge_base</text>
+  <text class="m fg" x="744" y="192" font-size="11.5">verify_identity</text>
+  <text class="m fg" x="744" y="218" font-size="11.5">get_account_details</text>
+  <text class="m fg" x="744" y="244" font-size="11.5">calculate_withdrawal</text>
+  <text class="m cr" x="744" y="270" font-size="11.5">execute_withdrawal</text>
+  <text class="m br" x="744" y="296" font-size="11.5">escalate_to_human</text>
+  <text class="m mu" x="744" y="318" font-size="10">tiered by risk · gates in code</text>
+
+  <!-- tools -> stores -->
+  <line x1="970" y1="186" x2="1006" y2="132" stroke="#9EACBB" stroke-width="1.6" marker-end="url(#ah)"/>
+  <line x1="970" y1="248" x2="1006" y2="292" stroke="#9EACBB" stroke-width="1.6" marker-end="url(#ah)"/>
+  <text class="m ac" x="986" y="172" text-anchor="middle" font-size="10.5">numbers</text>
+  <text class="m br" x="986" y="272" text-anchor="middle" font-size="10.5">narrative</text>
+
+  <!-- stores -->
+  <rect x="1010" y="72" width="200" height="92" rx="10" fill="#121D2A" stroke="#74A9DA"/>
+  <text class="t ac" x="1110" y="106" text-anchor="middle" font-size="16">accounts.json</text>
+  <text class="m mu" x="1110" y="128" text-anchor="middle" font-size="10.5">balances · contract year</text>
+  <text class="m mu" x="1110" y="146" text-anchor="middle" font-size="10.5">identity facts</text>
+
+  <rect x="1010" y="248" width="200" height="92" rx="10" fill="#121D2A" stroke="#D6B15E"/>
+  <text class="t br" x="1110" y="282" text-anchor="middle" font-size="16">Chroma (RAG)</text>
+  <text class="m mu" x="1110" y="304" text-anchor="middle" font-size="10.5">product · fees · FAQ</text>
+  <text class="m mu" x="1110" y="322" text-anchor="middle" font-size="10.5">never model memory</text>
+</svg>

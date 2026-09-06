@@ -21,3 +21,6 @@ env/
 Thumbs.db
 .vscode/
 .idea/
+
+# --- Assignment brief (do not publish) ---
+problemstmt/
