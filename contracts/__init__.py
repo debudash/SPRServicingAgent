@@ -8,4 +8,4 @@ CONTRACTS_VERSION and is additive (ADR 0001): new fields and messages only, neve
 or removed ones.
 """
 
-CONTRACTS_VERSION = "0.1.0"
+CONTRACTS_VERSION = "0.2.0"
