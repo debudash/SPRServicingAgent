@@ -13,7 +13,7 @@ from datetime import date
 from enum import StrEnum
 from typing import Any, Protocol
 
-from pydantic import Field, JsonValue
+from pydantic import AwareDatetime, Field, JsonValue
 
 from contracts.messages import Message
 from contracts.outcomes import Outcome
@@ -66,7 +66,9 @@ class AuditRecord(Message):
     conversation_id: str
     case_id: str | None = None
     turn: int = Field(ge=1)
-    at: str  # UTC timestamp, ISO 8601
+    # Issue #31 (found by /code-review on PR #29): a plain str accepted any text as a time.
+    # The audit trail needs an unambiguous instant; stored as ISO 8601 UTC.
+    at: AwareDatetime
     node: Node
     event: AuditEvent
     payload: dict[str, JsonValue]

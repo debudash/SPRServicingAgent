@@ -2,7 +2,7 @@
 
 import inspect
 import re
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -112,3 +112,30 @@ def test_fakes_conform_to_the_ports() -> None:
     assert search.search("q", date(2024, 12, 1)) == []
     assert audit.verify_chain()
     assert runner.send(runner.start(None), "hi").outcome is Outcome.ANSWERED
+
+
+# ---------- #31: AuditRecord accepted any string as its timestamp ----------
+# Found by /code-review on PR #29 (both axes). The audit trail needs unambiguous UTC times.
+def _record(at: Any) -> AuditRecord:
+    return AuditRecord(
+        audit_id=1,
+        conversation_id="CV1",
+        turn=1,
+        at=at,
+        node=Node.RESPOND,
+        event=AuditEvent.ANSWERED,
+        payload={},
+        versions={},
+        prev_hash="0",
+        row_hash="1",
+    )
+
+
+@pytest.mark.parametrize("at", ["yesterday", datetime(2026, 11, 9, 12, 0)])
+def test_issue_31_audit_time_must_be_timezone_aware(at: Any) -> None:
+    with pytest.raises(ValidationError):
+        _record(at)
+
+
+def test_issue_31_aware_utc_time_is_accepted() -> None:
+    assert _record(datetime(2026, 11, 9, 12, 0, tzinfo=UTC)).at.tzinfo is not None
