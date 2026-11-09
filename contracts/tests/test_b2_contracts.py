@@ -162,3 +162,55 @@ def test_fakes_conform_to_the_b2_ports() -> None:
     assert accounts.gate_a("SPR-1001") and not accounts.gate_a("SPR-1002")
     assert not identity.check_challenge("SPR-1001", date(1958, 3, 14), "7823")
     assert cases is not None
+
+
+# ---------- #62: gate results the session contradicts were accepted ----------
+# Found by /code-review on PR #61 (both axes): only four of the eight values had a rule.
+ANON = Session()
+UNTRUSTED = Session(customer_id="SPR-1002")
+FAILED_ONCE = Session(customer_id="SPR-1001", gate_a_trusted=True, failed_attempts=1)
+LOCKED = Session(customer_id="SPR-1001", gate_a_trusted=True, failed_attempts=3, locked=True)
+
+
+@pytest.mark.parametrize(
+    ("gate", "session"),
+    [
+        (GateResult.NO_CUSTOMER, UNVERIFIED),
+        (GateResult.UNTRUSTED, ANON),
+        (GateResult.ASK, VERIFIED),
+        (GateResult.ASK, LOCKED),
+        (GateResult.ASK, UNTRUSTED),
+        (GateResult.FAILED, UNVERIFIED),  # no failed attempt recorded
+        (GateResult.FAILED, LOCKED),
+        (GateResult.FAILED, VERIFIED),
+    ],
+)
+def test_issue_62_a_gate_the_session_contradicts_is_refused(
+    gate: GateResult, session: Session
+) -> None:
+    with pytest.raises(ValidationError):
+        _state(session, gate=gate)
+
+
+@pytest.mark.parametrize(
+    ("gate", "session"),
+    [
+        (GateResult.NO_CUSTOMER, ANON),
+        (GateResult.UNTRUSTED, UNTRUSTED),
+        (GateResult.ASK, UNVERIFIED),
+        (GateResult.ASK, FAILED_ONCE),
+        (GateResult.FAILED, FAILED_ONCE),
+        (GateResult.LOCKED, LOCKED),
+        (GateResult.LOCKED_NOW, LOCKED),
+        (GateResult.PASSED, VERIFIED),
+        (GateResult.VERIFIED, VERIFIED),
+    ],
+)
+def test_issue_62_a_consistent_gate_is_accepted(gate: GateResult, session: Session) -> None:
+    _state(session, gate=gate)
+
+
+def test_issue_62_every_gate_result_has_a_rule() -> None:
+    from contracts.state import GATE_REQUIRES
+
+    assert set(GATE_REQUIRES) == set(GateResult)

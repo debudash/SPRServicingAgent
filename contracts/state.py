@@ -3,6 +3,7 @@
 turn closed (FR-19).
 """
 
+from collections.abc import Callable
 from datetime import date
 from enum import StrEnum
 from typing import Literal
@@ -70,8 +71,24 @@ class GateResult(StrEnum):
     VERIFIED = "verified"  # Gate B passed on an earlier turn
 
 
-_GATE_NEEDS_GATE_B = {GateResult.PASSED, GateResult.VERIFIED}
-_GATE_NEEDS_LOCK = {GateResult.LOCKED, GateResult.LOCKED_NOW}
+def _challengeable(s: Session) -> bool:
+    """Trusted, bound, not yet verified and not locked: the only state that may be challenged."""
+    return s.customer_id is not None and s.gate_a_trusted and not s.gate_b_passed and not s.locked
+
+
+# Issue #62 (found by /code-review on PR #61): only four gate results had a rule, so identity_gate
+# could record a decision the session contradicts. Every value now names the session it requires,
+# and a test checks the table covers the whole enum.
+GATE_REQUIRES: dict[GateResult, Callable[[Session], bool]] = {
+    GateResult.NO_CUSTOMER: lambda s: s.customer_id is None,
+    GateResult.UNTRUSTED: lambda s: s.customer_id is not None and not s.gate_a_trusted,
+    GateResult.LOCKED: lambda s: s.locked,
+    GateResult.ASK: _challengeable,
+    GateResult.FAILED: lambda s: _challengeable(s) and s.failed_attempts >= 1,
+    GateResult.LOCKED_NOW: lambda s: s.locked,
+    GateResult.PASSED: lambda s: s.gate_b_passed,
+    GateResult.VERIFIED: lambda s: s.gate_b_passed,
+}
 
 
 class Budgets(_State):
@@ -141,12 +158,8 @@ class ConversationState(_State):
                 raise ValueError("an account view needs Gate A and Gate B (FR-02)")
             if self.account_view.customer_id != s.customer_id:
                 raise ValueError("an account view must be the bound customer's (NG-05)")
-        if self.gate in _GATE_NEEDS_GATE_B and not s.gate_b_passed:
-            raise ValueError(f"gate {self.gate} needs Gate B passed in the session")
-        if self.gate in _GATE_NEEDS_LOCK and not s.locked:
-            raise ValueError(f"gate {self.gate} needs a locked session")
-        if self.gate is GateResult.UNTRUSTED and s.gate_a_trusted:
-            raise ValueError("gate untrusted needs Gate A to have failed")
+        if self.gate is not None and not GATE_REQUIRES[self.gate](s):
+            raise ValueError(f"gate {self.gate} contradicts the session (issue #62)")
         return self
 
 
