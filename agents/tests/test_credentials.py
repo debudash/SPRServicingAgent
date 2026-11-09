@@ -164,3 +164,30 @@ def test_issue_69_ambiguous_candidates_yield_none(
     assert not creds.complete  # asked again, not counted
     for digits in ("7823", "7832", "1958"):
         assert digits not in out
+
+
+# ---------- #67: a credential sent in its own turn reached the model unmasked ----------
+# Found by /code-review on PR #64 (standards). ADR 0005: split across turns must still be masked.
+@pytest.mark.parametrize("text", ["7823", "it's 7823", "seven eight two three"])
+def test_issue_67_a_bare_last_four_is_captured_while_a_challenge_is_open(text: str) -> None:
+    out, creds = capture(text, AS_OF, challenge_open=True)
+    assert creds is not None and creds.last4 == "7823"
+    assert "7823" not in out and "seven" not in out
+    assert capture(text, AS_OF) == (text, None)  # no challenge open: an ordinary number
+
+
+def test_issue_67_runner_masks_credentials_split_across_turns() -> None:
+    concierge = ScriptedChatModel([Intent(kind=IntentKind.VERIFY)] * 2)
+    runner = GraphDeskRunner(
+        search=FakeSearch([]),
+        audit=MemoryAudit(),
+        models={Role.CONCIERGE: concierge, Role.KNOWLEDGE: ScriptedChatModel()},
+        clock=lambda: AS_OF,
+    )
+    conv = runner.start("SPR-1001")
+    runner.send(conv, "My date of birth is 1958-03-14.")
+    runner.send(conv, "7823")
+    dumped = runner._states[conv].model_dump_json()
+    seen_by_model = " ".join(str(m.content) for call in concierge.calls for m in call)
+    for leaked in ("7823", "1958-03-14"):
+        assert leaked not in dumped and leaked not in seen_by_model

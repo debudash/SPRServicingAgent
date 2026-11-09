@@ -118,7 +118,7 @@ def _one(values: list[str]) -> str | None:
     return distinct.pop() if len(distinct) == 1 else None
 
 
-def capture(text: str, as_of: date) -> tuple[str, Credentials | None]:
+def capture(text: str, as_of: date, challenge_open: bool = False) -> tuple[str, Credentials | None]:
     """Return the masked text and the candidates found (None when there are none).
 
     Issue #69 (found by /code-review on PR #64): any date, "social" alone and the first
@@ -153,7 +153,10 @@ def capture(text: str, as_of: date) -> tuple[str, Credentials | None]:
     # A bare four-digit group is a candidate only in credential context: a date of birth in the
     # same turn (BH-B2-01: "Sorry, 1958-03-15 and 7832."), or an SSN word with no digits near it.
     # When the SSN word already found its digits, other numbers are amounts and stay visible.
-    if dobs or (has_ssn_word and not near):
+    # Issue #67 (found by /code-review on PR #64): a reply of just "7823" to the desk's request
+    # had no context in its own words and reached the model raw. While a challenge is open,
+    # every bare group is a candidate, so credentials split across turns are masked too.
+    if challenge_open or dobs or (has_ssn_word and not near):
         masked = _mask_bare_groups(masked, bare)
 
     if not dobs and not near and not bare:
@@ -210,6 +213,6 @@ def _mask_bare_groups(text: str, found: list[str]) -> str:
     return _FOUR_DIGITS.sub(digits, text)
 
 
-def scrub(text: str, as_of: date) -> str:
+def scrub(text: str, as_of: date) -> str:  # no challenge context: the turn is not live
     """The second pass for any free text written outside the turn (audit, case packets)."""
     return capture(text, as_of)[0]

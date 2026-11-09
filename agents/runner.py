@@ -77,7 +77,9 @@ class GraphDeskRunner:
         started = time.monotonic()
         # ADR 0005: capture credentials first, so the raw turn never enters the state, the
         # transcript, a model call or the trace. Only the masked text moves on.
-        text, credentials = capture(text, prior.as_of)
+        s = prior.session
+        challenge_open = s.customer_id is not None and not s.gate_b_passed and not s.locked
+        text, credentials = capture(text, prior.as_of, challenge_open)
 
         ctx = TurnContext(started=started, credentials=credentials)
         deps = Deps(
