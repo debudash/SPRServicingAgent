@@ -9,6 +9,7 @@ from typing import Any, cast
 from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import BaseModel
 
+from agents.guards.credentials import Credentials
 from agents.tools.registry import ToolRegistry
 from contracts.ports import AuditLog, Usage
 from contracts.state import MAX_TOOL_CALLS_PER_TURN, ConversationState
@@ -37,6 +38,9 @@ class TurnContext:
     output_tokens: int = 0
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    # This turn's credential candidates (ADR 0005). Held here, outside ConversationState, so they
+    # never reach a checkpoint or trace; read only by identity_gate.
+    credentials: Credentials | None = field(default=None, repr=False)
 
     def spend_tool_call(self) -> None:
         if self.tool_calls >= MAX_TOOL_CALLS_PER_TURN:

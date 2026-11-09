@@ -13,6 +13,7 @@ from datetime import date
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from agents.graph import build_graph
+from agents.guards.credentials import capture
 from agents.llm import chat_model, load_model_map
 from agents.nodes.common import Deps, TurnContext
 from agents.nodes.respond import UNAVAILABLE_TEXT
@@ -74,8 +75,11 @@ class GraphDeskRunner:
         turn_no = self._turns_taken[conversation_id] + 1
         self._turns_taken[conversation_id] = turn_no
         started = time.monotonic()
+        # ADR 0005: capture credentials first, so the raw turn never enters the state, the
+        # transcript, a model call or the trace. Only the masked text moves on.
+        text, credentials = capture(text)
 
-        ctx = TurnContext(started=started)
+        ctx = TurnContext(started=started, credentials=credentials)
         deps = Deps(
             audit=self._audit,
             registry=self._registry,
