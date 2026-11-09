@@ -1,0 +1,6 @@
+# Model map (ADR 0004). One entry per contracts.tools.Role.
+concierge: {model: claude-haiku-5-5, effort: low}
+case: {model: claude-haiku-5-5, effort: low}
+knowledge: {model: claude-sonnet-5-5, effort: medium}
+transaction: {model: claude-sonnet-5-5, effort: medium}
+compliance: {model: claude-sonnet-5-5, effort: high}
