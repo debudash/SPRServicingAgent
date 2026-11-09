@@ -66,3 +66,10 @@ def test_issue_24_inactive_accounts_are_refused_not_reviewed() -> None:
     assert "the account status" not in review_section.lower()
     assert "**active**" not in review_section
     assert "cannot be processed" in text and "not active" in text
+
+
+def test_issue_25_document_folders_are_not_empty() -> None:
+    # Issue #25 (found by /code-review on PR #20): the parametrized tests passed vacuously if a
+    # folder was empty or moved. Six documents in knowledge/, three in the starter kit.
+    assert len(DOCS) >= 6
+    assert len(list(STARTER.glob("*.md"))) == 3

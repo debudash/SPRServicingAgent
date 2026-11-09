@@ -1,5 +1,6 @@
 """Contract tests: the contracts agree with the golden set, the blueprint and the data model."""
 
+import inspect
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -7,11 +8,12 @@ from typing import Any
 
 import pytest
 import yaml
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
+import contracts.messages
+import contracts.state
 from contracts.classification import COLUMNS, RESTRICTED_FIELDS, Classification
 from contracts.messages import (
-    AccountView,
     Approval,
     ComplianceDecision,
     Decision,
@@ -27,7 +29,7 @@ from contracts.messages import (
     ThresholdTier,
     proposal_hash,
 )
-from contracts.money import format_dollars, to_cents
+from contracts.money import format_dollars, surrender_charge_cents, to_cents
 from contracts.outcomes import FAILURE_OUTCOMES, Outcome
 from contracts.state import (
     FIELD_WRITERS,
@@ -51,14 +53,17 @@ def _golden_cases() -> list[dict[str, Any]]:
 
 
 def _quote(amount: int = 2_000_000) -> Quote:
-    # G-B3-01: SPR-1001, $20,000 in contract year 3.
+    # G-B3-01: SPR-1001 in contract year 3. Issue #25: the expected charge comes from the shared
+    # half-up rule, not float round() (banker's rounding), which only agreed by coincidence.
+    excess = amount - 874_506
+    charge = surrender_charge_cents(excess, 600)
     return Quote(
         amount_cents=amount,
         free_cents=874_506,
-        excess_cents=amount - 874_506,
+        excess_cents=excess,
         rate_bp=600,
-        charge_cents=round((amount - 874_506) * 0.06),
-        net_cents=amount - round((amount - 874_506) * 0.06),
+        charge_cents=charge,
+        net_cents=amount - charge,
         contract_year=3,
         threshold_tier=ThresholdTier.SELF_SERVICE,
         irs_notice=False,
@@ -125,9 +130,23 @@ def test_restricted_fields_live_only_in_the_identity_table() -> None:
             assert Classification.RESTRICTED not in columns.values(), table
 
 
-def test_no_message_a_model_sees_has_a_restricted_field() -> None:
-    assert not RESTRICTED_FIELDS & set(AccountView.model_fields)
-    assert not RESTRICTED_FIELDS & set(Session.model_fields)
+def _all_models() -> list[type[BaseModel]]:
+    found = []
+    for module in (contracts.messages, contracts.state):
+        for _, obj in inspect.getmembers(module, inspect.isclass):
+            if issubclass(obj, BaseModel) and obj.__module__ == module.__name__:
+                found.append(obj)
+    return found
+
+
+def test_issue_25_no_contract_model_has_a_restricted_field() -> None:
+    # Issue #25 (found by /code-review on PR #20): the old test checked two models' top-level
+    # fields. This walks every model in contracts.messages and contracts.state, nested ones
+    # included, since each is a module-level class.
+    models = _all_models()
+    assert len(models) >= 20
+    for model in models:
+        assert not RESTRICTED_FIELDS & set(model.model_fields), model.__name__
 
 
 # ---------- messages refuse what they should (FR-19) ----------
@@ -317,3 +336,19 @@ def test_issue_23_session_fields_keep_their_owners() -> None:
         check_write(Node.IDENTITY_GATE, f"session.{field}")
         with pytest.raises(ContractViolation):
             check_write(Node.INTAKE, f"session.{field}")
+
+
+def test_issue_25_quote_refuses_a_wrong_excess() -> None:
+    # Issue #25: the excess rule had no test of its own.
+    with pytest.raises(ValidationError):
+        Quote(
+            amount_cents=2_000_000,
+            free_cents=874_506,
+            excess_cents=1_125_493,
+            rate_bp=600,
+            charge_cents=surrender_charge_cents(1_125_493, 600),
+            net_cents=2_000_000 - surrender_charge_cents(1_125_493, 600),
+            contract_year=3,
+            threshold_tier=ThresholdTier.SELF_SERVICE,
+            irs_notice=False,
+        )
