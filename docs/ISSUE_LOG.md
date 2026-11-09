@@ -14,3 +14,4 @@ Defects found in review are the evidence for workstream F (ADR 0002), so they al
 | #30 | 2026-11-09 | Identity back-door test missed keyword-only parameters | review on PR #29 (standards) | b028ab5 |
 | #31 | 2026-11-09 | AuditRecord accepted any string as its timestamp | review on PR #29 (both axes) | 894941e |
 | #32 | 2026-11-09 | AuditLog.append accepted values AuditRecord would refuse | review on PR #29 (standards) | f1704ea |
+| #62 | 2026-11-09 | ConversationState accepted gate results the session contradicts | review on PR #61 (both axes) | 0d736c4 |
