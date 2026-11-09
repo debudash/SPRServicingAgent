@@ -1,0 +1,25 @@
+# Tool configuration for the v2 servicing desk. Dependencies live in requirements*.txt.
+# v1 lives in baseline/ and is excluded from every check: it is frozen, not maintained.
+
+[project]
+name = "spr-servicing-desk"
+version = "0.0.0"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["baseline", "problemstmt", ".github"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+exclude = ['^baseline/', '^problemstmt/', '^\.github/']
+
+[tool.pytest.ini_options]
+testpaths = ["contracts", "data", "agents", "evals", "redteam"]
+pythonpath = ["."]
+addopts = "-q --import-mode=importlib"

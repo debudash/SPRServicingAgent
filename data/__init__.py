@@ -1,3 +1,4 @@
-# data package.
-# accounts.py  -> the customer records (deterministic; from the provided accounts.json)
-# retriever.py -> Chroma RAG over the knowledge base (product grounding)
+"""Data foundation: relational store, data contract, synthetic data, ingestion, audit store.
+
+Lane: `data` (Dev A). Numbers come from records here; narrative comes from the knowledge base.
+"""

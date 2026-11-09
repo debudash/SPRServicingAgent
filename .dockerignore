@@ -1,0 +1,8 @@
+.git
+.venv
+**/__pycache__
+.env
+.env.*
+!.env.example
+baseline/chroma_db
+slides

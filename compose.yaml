@@ -1,0 +1,6 @@
+# Local stack. Today: `docker compose run --rm checks` runs the same checks as CI, inside the container.
+# Later: the desk UI and the human review queue join as services here (check `docker ps` for port clashes).
+services:
+  checks:
+    build: .
+    command: make check
