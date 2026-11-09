@@ -60,8 +60,6 @@ row in `docs/ISSUE_LOG.md` naming the PR where it was found.
   It does not check repo standards across a human design change.
 
 ## Open
-- **Retrospective review of #11.** It changed `evals/golden/` before this rule existed. Running
-  `/code-review` over it would bring the answer key under the rule it now falls under.
 - **A mechanical money-path guard** (a CI check that blocks auto-merge when an agent PR touches
   money-path files without a spot-check label) can replace the "never night-safe" rule once the
   money-path folders exist (B2 onward).
