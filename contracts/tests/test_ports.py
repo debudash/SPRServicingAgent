@@ -2,12 +2,13 @@
 
 import inspect
 import re
+import typing
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
+from pydantic import JsonValue, ValidationError
 
 from contracts.outcomes import Outcome
 from contracts.ports import (
@@ -82,8 +83,8 @@ class _FakeAudit:
         turn: int,
         node: Node,
         event: AuditEvent,
-        payload: dict[str, Any],
-        versions: dict[str, Any],
+        payload: dict[str, JsonValue],
+        versions: dict[str, JsonValue],
         case_id: str | None = None,
     ) -> AuditRecord:
         raise NotImplementedError
@@ -139,3 +140,13 @@ def test_issue_31_audit_time_must_be_timezone_aware(at: Any) -> None:
 
 def test_issue_31_aware_utc_time_is_accepted() -> None:
     assert _record(datetime(2026, 11, 9, 12, 0, tzinfo=UTC)).at.tzinfo is not None
+
+
+# ---------- #32: AuditLog.append accepted values AuditRecord would refuse ----------
+# Found by /code-review on PR #29 (standards axis). A non-JSON payload must fail at the caller's
+# type check, not inside the data lane after the caller has acted.
+@pytest.mark.parametrize("field", ["payload", "versions"])
+def test_issue_32_append_types_match_the_record(field: str) -> None:
+    append_hints = typing.get_type_hints(AuditLog.append)
+    record_hints = typing.get_type_hints(AuditRecord)
+    assert append_hints[field] == record_hints[field]

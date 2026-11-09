@@ -11,7 +11,7 @@ Each lane implements or calls these Protocols and never imports another lane's m
 
 from datetime import date
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Protocol
 
 from pydantic import AwareDatetime, Field, JsonValue
 
@@ -85,8 +85,10 @@ class AuditLog(Protocol):
         turn: int,
         node: Node,
         event: AuditEvent,
-        payload: dict[str, Any],
-        versions: dict[str, Any],
+        # Issue #32 (found by /code-review on PR #29): typed like AuditRecord, so a non-JSON
+        # value fails at the caller's type check instead of inside the data lane.
+        payload: dict[str, JsonValue],
+        versions: dict[str, JsonValue],
         case_id: str | None = None,
     ) -> AuditRecord:
         """Append one row, chained to the previous row's hash. Rows are never updated or deleted."""
