@@ -140,7 +140,7 @@
   </section>
 
   <section>
-    <p class="kicker">One case through the desk</p>
+    <p class="kicker">One conversation through the desk</p>
     <h2>The Concierge reads intent. Code picks every next step.</h2>
     <div class="legend">
       <span><i class="sw llm"></i>LLM judges inside the node</span>
@@ -150,7 +150,7 @@
     <div class="flow-wrap">
       <div class="flow">
         <div class="row-label">Every turn</div>
-        <div class="node code"><span class="n">intake</span><span class="k">session, Gate A, as-of date, kill switches, budgets</span></div>
+        <div class="node code"><span class="n">intake</span><span class="k">session, Gate A, budgets; masks typed credentials before any model</span></div>
         <div class="node llm"><span class="n">concierge</span><span class="k">Haiku · intent, amount, explicit yes</span></div>
         <div class="node code"><span class="n">identity_gate</span><span class="k">Gate A, then Gate B challenge; 3 tries</span></div>
         <div class="node code"><span class="n">account</span><span class="k">balance, year, allowance; no DOB or SSN</span></div>
@@ -175,7 +175,7 @@
         <div class="node code"><span class="n">execute</span><span class="k">same path, human approval recorded</span></div>
       </div>
     </div>
-    <p class="note">Edges are Python functions of the case state. The only model output that steers routing is the Concierge's intent, and every intent still passes the same gates.</p>
+    <p class="note">Edges are Python functions of the conversation state. The only model output that steers routing is the Concierge's intent, and every intent still passes the same gates.</p>
   </section>
 
   <section>
@@ -185,7 +185,7 @@
       <table>
         <thead><tr><th>Agent</th><th>Model · effort</th><th>Tools it may call</th><th>It never</th></tr></thead>
         <tbody>
-          <tr><td>Concierge</td><td><span class="pill haiku">Haiku 5.5</span> low</td><td><code>verify_identity</code></td><td>quotes, answers product facts, approves</td></tr>
+          <tr><td>Concierge</td><td><span class="pill haiku">Haiku 5.5</span> low</td><td>none: credentials never reach it</td><td>quotes, answers product facts, approves, sees DOB or SSN digits</td></tr>
           <tr><td>Knowledge</td><td><span class="pill sonnet">Sonnet 5.5</span> medium</td><td><code>search_kb</code></td><td>reads account data</td></tr>
           <tr><td>Transaction</td><td><span class="pill sonnet">Sonnet 5.5</span> medium</td><td><code>get_account</code> <code>quote</code> <code>propose</code></td><td>approves its own proposal, executes</td></tr>
           <tr><td>Compliance</td><td><span class="pill sonnet">Sonnet 5.5</span> high</td><td><code>get_policy</code></td><td>executes, edits a proposal</td></tr>
@@ -204,13 +204,13 @@
       <div class="guard"><h3>Quote, yes, token, then execute</h3><p>The token is an HMAC over the proposal hash. Change the amount and the token is void.</p><span class="ref">FR-08 · GR-16 to GR-18</span></div>
       <div class="guard"><h3>Compliance cannot override a flag</h3><p>A rule flag sends the case to a person, whatever Compliance says.</p><span class="ref">FR-11</span></div>
       <div class="guard"><h3>One withdrawal per proposal</h3><p>An idempotency key makes a replayed execute a no-op.</p><span class="ref">FR-09</span></div>
-      <div class="guard"><h3>Budgets stop runaway turns</h3><p>8 hops, 12 tool calls, 30 seconds per turn; $0.10 per case. Running out escalates.</p><span class="ref">FR-20 · D-10</span></div>
+      <div class="guard"><h3>Budgets stop runaway turns</h3><p>8 hops, 12 tool calls, 30 seconds per turn; $0.10 per conversation. Running out escalates.</p><span class="ref">FR-20 · D-10</span></div>
       <div class="guard"><h3>Fail closed</h3><p>Checker or queue down, or execution switched off: nothing moves, the customer is told what happens next.</p><span class="ref">FR-21 · FR-26</span></div>
     </div>
   </section>
 
   <section>
-    <p class="kicker">Shared case state</p>
+    <p class="kicker">Shared conversation state</p>
     <h2>Every field has exactly one writer</h2>
     <div class="table-wrap">
       <table>
@@ -239,7 +239,7 @@
       <div class="guard"><h3><code>desk.db</code> (SQLite)</h3><p>Accounts without restricted fields; an <code>identity</code> table only the gate can call; transactions, proposals, cases; an append-only audit table.</p><span class="ref">PG-01 · PG-04 · PG-10</span></div>
       <div class="guard"><h3><code>knowledge/</code> → Chroma</h3><p>Versioned documents with an ID, version and effective date on every chunk. Includes the two new policy documents and a superseded fee schedule.</p><span class="ref">PG-05 · PG-06 · FR-24</span></div>
       <div class="guard"><h3>One clock, one scrubber</h3><p>Contract year and age derive from the as-of date. One function strips DOB and SSN digits from anything bound for a prompt, trace, log or packet.</p><span class="ref">D-04 · FR-23</span></div>
-      <div class="guard"><h3>Trace and audit kept apart</h3><p>LangSmith traces each case for debugging. The audit table answers a regulator: <code>python -m agents.audit &lt;case_id&gt;</code>.</p><span class="ref">FR-25 · FR-27</span></div>
+      <div class="guard"><h3>Trace and audit kept apart</h3><p>LangSmith traces each conversation for debugging. The audit table answers a regulator: <code>python -m agents.audit &lt;conversation_id&gt;</code>.</p><span class="ref">FR-25 · FR-27</span></div>
     </div>
   </section>
 
