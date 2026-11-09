@@ -273,3 +273,29 @@ def test_issue_21_execution_names_a_valid_approver() -> None:
     with pytest.raises(ValidationError):
         Execution(transaction_id="T1", proposal_id="P1", approved_by="anyone")
     Execution(transaction_id="T1", proposal_id="P1", approved_by="human:r1")
+
+
+# ---------- #22: Quote validated a wrong surrender charge ----------
+# Found by /code-review on PR #20 (standards axis). G-B3-01: excess 11,254.94 at 6% = 675.30.
+def _g_b3_01(charge_cents: int) -> dict[str, Any]:
+    return {
+        "amount_cents": 2_000_000,
+        "free_cents": 874_506,
+        "excess_cents": 1_125_494,
+        "rate_bp": 600,
+        "charge_cents": charge_cents,
+        "net_cents": 2_000_000 - charge_cents,
+        "contract_year": 3,
+        "threshold_tier": "self_service",
+        "irs_notice": False,
+    }
+
+
+@pytest.mark.parametrize("charge_cents", [67_529, 67_531, 0, 1_125_495])
+def test_issue_22_quote_refuses_a_wrong_charge(charge_cents: int) -> None:
+    with pytest.raises(ValidationError):
+        Quote.model_validate(_g_b3_01(charge_cents))
+
+
+def test_issue_22_quote_accepts_the_half_up_charge() -> None:
+    Quote.model_validate(_g_b3_01(67_530))

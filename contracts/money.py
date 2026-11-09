@@ -20,3 +20,12 @@ def to_dollars(cents: int) -> Decimal:
 def format_dollars(cents: int) -> str:
     """Customer-facing format, e.g. 1932470 -> '$19,324.70'."""
     return f"${to_dollars(cents):,.2f}"
+
+
+def surrender_charge_cents(excess_cents: int, rate_bp: int) -> int:
+    """Surrender charge on the excess, half-up to the cent (fee_schedule.md, GR-03).
+
+    The one place the charge rule lives: the quote calculator and the Quote contract both use it.
+    """
+    exact = Decimal(excess_cents) * Decimal(rate_bp) / Decimal(10_000)
+    return int(exact.quantize(Decimal(1), rounding=ROUND_HALF_UP))

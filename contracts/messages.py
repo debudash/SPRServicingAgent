@@ -12,6 +12,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from contracts import CONTRACTS_VERSION
+from contracts.money import surrender_charge_cents
 from contracts.outcomes import Outcome
 
 Cents = int  # integer cents; see contracts.money
@@ -110,6 +111,11 @@ class Quote(Message):
             raise ValueError("net must equal amount minus charge")
         if self.excess_cents != max(0, self.amount_cents - self.free_cents):
             raise ValueError("excess must equal amount minus free allowance, floored at 0")
+        # Issue #22 (found by /code-review on PR #20): the charge was never checked, so a wrong
+        # charge validated. It must be the half-up surrender charge on the excess, from the one
+        # shared rule in contracts.money.
+        if self.charge_cents != surrender_charge_cents(self.excess_cents, self.rate_bp):
+            raise ValueError("charge must be the half-up surrender charge on the excess")
         return self
 
 
