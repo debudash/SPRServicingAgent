@@ -14,7 +14,7 @@ Anthropic first-party API rates, per million tokens, as listed on 2026-11-09.
 | Claude Haiku 5.5 (`claude-haiku-5-5`) | $0.10 | $0.50 | $0.01 (0.1×) | $0.125 (1.25×) | 512 tokens |
 | Claude Sonnet 5 (`claude-sonnet-5`, the v1 model) | $2.00 | $10.00 | $0.20 | $2.50 | 1,024 tokens |
 
-Note for M-14: its target ($0.042 per resolved case, 2× v1) was set from v1's measured cost, which v1's
+Note for M-14: its target ($0.042 per resolved conversation, 2× v1) was set from v1's measured cost, which v1's
 config priced at $3 / $15 per million. At today's Sonnet prices v1 would cost about a third less, so the
 target is generous by that margin. The target stays as approved; the scorecard reports both.
 
@@ -35,7 +35,7 @@ case, the conversation history before the newest turn.
 | B3 routine withdrawal, 4 customer turns | Concierge 8, Transaction 2, Compliance 1 | 36,300 | 3,100 | **83%** |
 | B1 product question, 1 customer turn | Concierge 2, Knowledge 1 | 9,800 | 850 | **73%** |
 
-## 3. Cost per case and per month
+## 3. Cost per conversation and per month
 
 | Design | Routine withdrawal | Product question | 1,000 withdrawals / month | 100,000 withdrawals / month |
 |---|---|---|---|---|
@@ -50,7 +50,7 @@ case, the conversation history before the newest turn.
    timestamps or IDs), then the session context, then the conversation. Mid-conversation updates go in as
    new messages, never as edits to the system prompt.
 2. **One model everywhere does not meet the target.** Design A breaks the cost target (M-14) and is above
-   the $0.10 per-case budget (D-10), so an ordinary withdrawal would hit the hard stop and escalate. Design B
+   the $0.10 per-conversation budget (D-10), so an ordinary withdrawal would hit the hard stop and escalate. Design B
    still misses M-14. The model-per-role comparison is therefore required, not optional: the Concierge,
    which makes most of the calls, is the first candidate for a smaller model.
 3. **Output is the expensive part.** In design B, output is about 60% of the cost, mostly thinking tokens.

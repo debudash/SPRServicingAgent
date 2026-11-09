@@ -45,7 +45,7 @@ date of birth or SSN digits leaking.
 | D-07 | Vulnerable-customer signals that force a human hold, at any amount: a third party directing the customer; pressure or urgency; age 80+ with a withdrawal above the free allowance; confusion or repeated changes of amount. | Owner decision |
 | D-08 | 3 failed identity challenges lock account actions for the session and open a case. | Owner decision |
 | D-09 | A third party (spouse, child, beneficiary, claimed attorney) gets public product information only and a case so SPR can verify their authority offline. Nothing about the account is shared. | Owner decision |
-| D-10 | Budgets: per customer turn 8 agent hops, 12 tool calls, 30 seconds; per case $0.10 model cost. These are hard stops; the cost target (M-14) is the expected average. | Owner decision |
+| D-10 | Budgets: per customer turn 8 agent hops, 12 tool calls, 30 seconds; per conversation $0.10 model cost. These are hard stops; the cost target (M-14) is the expected average. | Owner decision |
 
 ## 3. Guarantees the platform will not provide
 
@@ -123,8 +123,8 @@ Each item can be turned into an eval case or unit test that passes or fails with
 ### Coordination
 - **FR-19** Every message between agents validates against a versioned schema. An invalid message is rejected
   and the case fails closed.
-- **FR-20** Each case enforces the D-10 budgets (per turn: 8 agent hops, 12 tool calls, 30 seconds; per
-  case: $0.10). When one runs out, the case escalates with code `UNAVAILABLE` and no action is taken.
+- **FR-20** Each conversation enforces the D-10 budgets (per turn: 8 agent hops, 12 tool calls, 30 seconds;
+  per conversation: $0.10). When one runs out, the case escalates with code `UNAVAILABLE` and no action is taken.
 - **FR-21** If the Compliance agent or the case queue is unavailable, no withdrawal executes and the customer
   is told what happens next.
 - **FR-22** Each agent can call only the tools registered for its role. Any other call is refused in code
@@ -134,11 +134,11 @@ Each item can be turned into an eval case or unit test that passes or fails with
 - **FR-23** Restricted fields (date of birth, SSN digits) never appear in prompts, traces, logs, answers or
   case packets.
 - **FR-24** Retrieval returns the document version in force at the as-of date.
-- **FR-25** Given a case ID, one command rebuilds the full timeline from the audit log: what was asked, what
+- **FR-25** Given a conversation ID, one command rebuilds the full timeline from the audit log, including its cases: what was asked, what
   each agent decided and why, which versions applied, and who approved any money movement.
 - **FR-26** A per-capability kill switch can turn execution off. The desk then still answers questions and
   routes every withdrawal to a human.
-- **FR-27** Each case has one trace across all agents, recording model and prompt versions, tokens, cost and
+- **FR-27** Each conversation has one trace across all agents, recording model and prompt versions, tokens, cost and
   latency.
 
 ## 5. Non-goals (enforced as behaviours)
@@ -189,7 +189,7 @@ Targets are set here and nowhere else. Safety metrics are blocking; the rest are
 | M-11 | Routine withdrawal, start to confirmation | **≤ 3 minutes** | assumed 12-minute call |
 | M-12 | Hardship case packet ready for the reviewer | **< 1 minute** | assumed 5–10 business days |
 | M-13 | p95 latency per customer turn | **≤ 8 seconds** | v1 (Claude): 4.7 s average per case |
-| M-14 | Model cost per resolved case | **≤ 2× v1** (≤ $0.042) | v1 (Claude): ≈ $0.021 per run |
+| M-14 | Model cost per resolved conversation | **≤ 2× v1** (≤ $0.042) | v1 (Claude): ≈ $0.021 per run |
 | M-15 | Open critical red-team findings at release | **0** (blocking for release) | none |
 
 M-09 and M-10 pull against each other on purpose. Escalating everything games safety but breaks M-09.

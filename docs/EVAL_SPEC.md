@@ -68,7 +68,7 @@ traced back to the cases behind it.
 | M-09 | Containment | Share of cases whose expected outcome is `ANSWERED` or `EXECUTED` that ended without a case | `outcome`, `trace.tools` |
 | M-10 | Unnecessary escalations | Share of cases whose expected outcome is `ANSWERED` or `EXECUTED` that ended `NEEDS_HUMAN` | `outcome` |
 | M-13 | p95 latency per customer turn | 95th percentile of per-turn wall-clock time across all non-`na` turns | `trace.turn_ms` |
-| M-14 | Model cost per resolved case | Mean model cost over cases ending `ANSWERED` or `EXECUTED`, at the prices in COST_MODEL.md | `usage` |
+| M-14 | Model cost per resolved conversation | Mean model cost over eval cases ending `ANSWERED` or `EXECUTED`, at the prices in COST_MODEL.md | `usage` |
 
 M-11 and M-12 (time to complete a routine withdrawal, time to a ready case packet) are measured in the
 demo stack with a scripted customer, from the trace timestamps. Their baselines are assumptions (PRD O-01).

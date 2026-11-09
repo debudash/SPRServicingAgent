@@ -5,7 +5,7 @@ Date: 2026-11-09 · Status: accepted · Decided by: integrator (owner) · Issue:
 ## Context
 The cost model ([COST_MODEL.md](../COST_MODEL.md)) shows that Sonnet 5.5 on every agent costs about $0.104
 per routine withdrawal without caching and $0.051 with it, both above the $0.042 target (PRD M-14), and the
-uncached figure is above the $0.10 per-case budget (D-10). The Concierge makes most of the calls and needs
+uncached figure is above the $0.10 per-conversation budget (D-10). The Concierge makes most of the calls and needs
 the least judgment. The brief asks for at least two models compared on at least two roles.
 
 ## Decision

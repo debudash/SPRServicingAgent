@@ -3,12 +3,13 @@
 The design every lane builds against. Requirement IDs refer to [PRD.md](../PRD.md), rules to
 [GROUNDING_RULES.md](../GROUNDING_RULES.md), bullets to [PLAN.md](../PLAN.md).
 Decisions: [ADR 0003](../decisions/0003-langgraph-code-routed-graph.md) (framework and topology),
-[ADR 0004](../decisions/0004-model-per-role.md) (models). A slide version is in `blueprint.html`, published at
+[ADR 0004](../decisions/0004-model-per-role.md) (models), [ADR 0005](../decisions/0005-credentials-captured-by-code.md) (credentials).
+Data model, flows, trust boundaries and deployment: [ARCHITECTURE.md](../ARCHITECTURE.md). A slide version is in `blueprint.html`, published at
 https://claude.ai/artifact/JqUdFUhq3BoiMUt2Mh7kWd (private to the owner until shared).
 
 ## 1. The shape in one paragraph
 
-A **LangGraph** graph runs one customer case. One LLM, the **Concierge**, reads what the customer wants and
+A **LangGraph** graph runs one customer conversation. One LLM, the **Concierge**, reads what the customer wants and
 writes the replies. **Code** decides which node runs next. Every money movement follows the same fixed
 path: **quote → confirm → rules → Compliance → execute**, or a case for a human. LLMs judge inside a node
 (what the customer means, what a document says, whether a request looks coerced). They never choose to
@@ -43,7 +44,7 @@ flowchart LR
 
 | Node | Kind | What it does | Writes to state |
 |---|---|---|---|
-| `intake` | code | Loads session context (customer ID, Gate A, as-of date, kill switches), starts budgets | `session`, `budgets`, `switches` |
+| `intake` | code | Loads session context (customer ID, Gate A, as-of date, kill switches), starts budgets, extracts credential-shaped text for `identity_gate` and masks it before any model sees the turn (ADR 0005) | `session`, `budgets`, `switches` |
 | `concierge` | LLM, Haiku 5.5 | Classifies intent, extracts amount and confirmation; never answers product or account questions itself | `intent` |
 | `identity_gate` | code | Gate A (from the record), Gate B challenge, 3-attempt lockout (D-08) | `session.gate_b`, `session.failed_attempts`, `session.locked` |
 | `knowledge` | LLM, Sonnet 5.5 | Retrieves from the knowledge base and answers with citations | `knowledge_answer` |
@@ -69,7 +70,7 @@ logged (FR-22).
 
 | Agent | Model (start) | Effort | Tools it may call | It never |
 |---|---|---|---|---|
-| Concierge | Haiku 5.5 | low | `verify_identity` (passes credentials to the identity gate, never sees stored values) | quotes, answers product facts, approves |
+| Concierge | Haiku 5.5 | low | none (it classifies intent; credentials never reach it, see ARCHITECTURE §4) | quotes, answers product facts, approves, sees DOB or SSN digits |
 | Knowledge | Sonnet 5.5 | medium | `search_kb` | reads account data |
 | Transaction | Sonnet 5.5 | medium | `get_account`, `quote`, `propose` | approves its own proposal, executes |
 | Compliance | Sonnet 5.5 | high | `get_policy` (read-only policy sections) | executes, edits a proposal |
@@ -78,14 +79,14 @@ logged (FR-22).
 `execute` is not a tool any agent can call. Only the `execute` node runs it, after the approval edge.
 The starting models are confirmed or changed by the model-per-role evals (ADR 0004).
 
-## 4. Case state (single writer per field)
+## 4. Conversation state (single writer per field)
 
 Typed in `contracts/state.py`. Every field has exactly one writer node; a write from any other node is a
 contract violation and fails the case closed (FR-19).
 
 | Field | Writer | Notes |
 |---|---|---|
-| `case_id`, `session`, `as_of`, `switches`, `budgets` | `intake` (budgets updated by the runner) | `session` holds Gate A, never DOB or SSN |
+| `conversation_id`, `session`, `as_of`, `switches`, `budgets` | `intake` (budgets updated by the runner) | `session` holds Gate A, never DOB or SSN. `intake` also extracts credential-shaped text from the raw turn for `identity_gate` and masks it before any model sees the turn |
 | `session.gate_b`, `failed_attempts`, `locked` | `identity_gate` | |
 | `intent` | `concierge` | Intent, amount, explicit-yes flag |
 | `account_view` | `account` | Balance, contract year, age band, allowance remaining. No restricted fields |
@@ -144,16 +145,16 @@ case (a lock, a kill switch) go in as new messages, never as edits to the system
 | One withdrawal per proposal | `execute` (idempotency key) | FR-09 |
 | Tool scope per role | tool registry | FR-22 |
 | Contract validation on every state write | runner | FR-19 |
-| Budgets: 8 hops, 12 tool calls, 30 s per turn; $0.10 per case | runner (LangGraph recursion limit, counters, usage) | FR-20, D-10 |
+| Budgets: 8 hops, 12 tool calls, 30 s per turn; $0.10 per conversation | runner (LangGraph recursion limit, counters, usage) | FR-20, D-10 |
 | Fail closed when Compliance or the queue is down | edges | FR-21, GR-21 |
 | Kill switch on execution | `switches` read by edges | FR-26 |
 
 ## 8. Observability and audit
 
-- **Tracing:** LangSmith, one trace per case (`case_id` as the thread), with model, prompt version, tokens,
+- **Tracing:** LangSmith, one trace per conversation (`conversation_id` as the thread), with model, prompt version, tokens,
   cost and latency per node. Text is scrubbed before it is traced.
 - **Audit:** separate from traces, in `desk.db`. Every node that decides anything writes one row with the
-  versions in force. `python -m agents.audit <case_id>` rebuilds the case (FR-25).
+  versions in force. `python -m agents.audit <conversation_id>` rebuilds the conversation and its cases (FR-25).
 
 ## 9. Runtime
 
