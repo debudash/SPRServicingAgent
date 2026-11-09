@@ -8,7 +8,7 @@ import pytest
 from contracts.ports import AuditEvent, AuditLog
 from contracts.tools import Node
 from data.store.audit import GENESIS_HASH, SqliteAuditLog
-from data.store.db import open_db
+from data.store.db import MIGRATIONS_DIR, open_db
 
 
 def _log(tmp_path: Path) -> tuple[sqlite3.Connection, SqliteAuditLog]:
@@ -88,6 +88,11 @@ def test_migrations_apply_once(tmp_path: Path) -> None:
     path = tmp_path / "desk.db"
     open_db(path).close()
     conn = open_db(path)
-    assert conn.execute("SELECT version FROM schema_migrations").fetchall() == [(1,)]
+    # Every migration file exactly once, in order, after two opens (was `== [(1,)]` before
+    # migration 0002 existed, issue #57).
+    expected = sorted(int(f.name.split("_")[0]) for f in MIGRATIONS_DIR.glob("*.sql"))
+    assert len(expected) >= 2
+    rows = conn.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()
+    assert [r[0] for r in rows] == expected
     names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"conversations", "audit"} <= names
