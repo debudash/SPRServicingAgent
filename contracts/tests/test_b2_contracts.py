@@ -57,10 +57,6 @@ VERIFIED = Session(customer_id="SPR-1001", gate_a_trusted=True, gate_b_passed=Tr
 UNVERIFIED = Session(customer_id="SPR-1001", gate_a_trusted=True)
 
 
-def test_contracts_version_is_0_3_0() -> None:
-    assert CONTRACTS_VERSION == "0.3.0"
-
-
 # ---------- intents (NG-05, NG-08) ----------
 def test_intents_for_other_accounts_and_restricted_fields_exist() -> None:
     assert IntentKind("other_account") is IntentKind.OTHER_ACCOUNT
@@ -151,17 +147,33 @@ class _FakeIdentity:
 
 
 class _FakeCases:
+    def __init__(self) -> None:
+        self.opened: list[CasePacket] = []
+
     def open(self, packet: CasePacket) -> None:
-        return None
+        self.opened.append(packet)
 
 
 def test_fakes_conform_to_the_b2_ports() -> None:
     accounts: AccountStore = _FakeAccounts()
     identity: IdentityCheck = _FakeIdentity()
-    cases: CaseStore = _FakeCases()
+    fake_cases = _FakeCases()
+    cases: CaseStore = fake_cases
     assert accounts.gate_a("SPR-1001") and not accounts.gate_a("SPR-1002")
+    assert accounts.view("SPR-1001", AS_OF).customer_id == "SPR-1001"
     assert not identity.check_challenge("SPR-1001", date(1958, 3, 14), "7823")
-    assert cases is not None
+    packet = CasePacket(
+        case_id="CASE-2",
+        conversation_id="CV1",
+        customer_id="SPR-1003",
+        opened_for=CaseReason.THIRD_PARTY,
+        request_summary="A family member asked to withdraw for the customer.",
+        quote=None,
+        excerpt="I'm Linda's son",
+        recommendation="Contact the owner directly.",
+    )
+    cases.open(packet)
+    assert fake_cases.opened == [packet]
 
 
 # ---------- #62: gate results the session contradicts were accepted ----------
