@@ -176,10 +176,10 @@ in B1 before relying on them: per-request `effort`, and `cache_control` placemen
 contracts/             integrator   state.py, messages.py, tools.py, outcomes.py
 knowledge/             integrator   versioned knowledge documents
 data/                  data lane
-  store/                            schema, migrations, seed
+  store/                            schema, migrations, seed, append-only audit log (records, never decides)
   identity/            money path   restricted fields, challenge check
   quote/               money path   the calculator (FR-05, D-05)
-  ledger/              money path   transactions, idempotent execute, append-only audit
+  ledger/              money path   transactions, idempotent execute
   knowledge_index/                  ingestion and retrieval
   synthetic/                        synthetic customers and history
   clock.py, scrub.py
