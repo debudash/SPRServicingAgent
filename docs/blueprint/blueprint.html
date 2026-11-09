@@ -1,0 +1,291 @@
+<title>SPR Servicing Desk Blueprint</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  /* Layout: one column of slide-sized sections; each section is one talking point. Same palette as the v1 blueprint. */
+  :root {
+    --ground: #EAEEF3; --surface: #FFFFFF; --surface-2: #F4F6F9;
+    --ink: #14202E; --muted: #566372; --faint: #7C8896;
+    --line: #D3DBE4; --line-strong: #B9C4CF;
+    --accent: #1F4E79; --accent-soft: #E4ECF4;
+    --brass: #9A711F; --brass-soft: #F1E8D3;
+    --good: #2E7D5B; --good-soft: #E1F0E8;
+    --crit: #A9432B; --crit-soft: #F6E3DC;
+    --display: "IBM Plex Serif", Georgia, serif;
+    --body: "IBM Plex Sans", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --ground: #0C141F; --surface: #121D2A; --surface-2: #0F1926;
+    --ink: #E7ECF2; --muted: #9EACBB; --faint: #6E7D8D;
+    --line: #263341; --line-strong: #33434F;
+    --accent: #74A9DA; --accent-soft: #172C40;
+    --brass: #D6B15E; --brass-soft: #2A2415;
+    --good: #5FC095; --good-soft: #14261E;
+    --crit: #E08064; --crit-soft: #2C1913;
+    color-scheme: dark; } }
+  :root[data-theme="dark"] {
+    --ground: #0C141F; --surface: #121D2A; --surface-2: #0F1926;
+    --ink: #E7ECF2; --muted: #9EACBB; --faint: #6E7D8D;
+    --line: #263341; --line-strong: #33434F;
+    --accent: #74A9DA; --accent-soft: #172C40;
+    --brass: #D6B15E; --brass-soft: #2A2415;
+    --good: #5FC095; --good-soft: #14261E;
+    --crit: #E08064; --crit-soft: #2C1913;
+    color-scheme: dark; }
+
+  body { background: var(--ground); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased; }
+  .page { max-width: 1080px; margin: 0 auto; display: grid; gap: 28px;
+    padding-block: 40px 64px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  section { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 28px clamp(18px, 4vw, 36px);
+    display: grid; gap: 18px; min-width: 0; }
+  .kicker { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--brass); margin: 0; }
+  h1, h2 { font-family: var(--display); margin: 0; text-wrap: balance; line-height: 1.2; }
+  h1 { font-size: clamp(28px, 4.4vw, 42px); font-weight: 700; }
+  h2 { font-size: clamp(21px, 2.6vw, 26px); font-weight: 600; }
+  p { margin: 0; max-width: 70ch; }
+  .lede { font-size: 17px; color: var(--muted); }
+  code, .mono { font-family: var(--mono); font-size: .9em; }
+
+  /* hero */
+  .hero { background: var(--surface); }
+  .never { border-left: 3px solid var(--brass); background: var(--brass-soft); padding: 14px 18px; border-radius: 0 8px 8px 0;
+    font-family: var(--display); font-size: 17px; max-width: 75ch; }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+  .chip { display: grid; gap: 2px; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); min-width: 0; }
+  .chip b { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); font-weight: 500; }
+
+  /* flow */
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .sw { width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid; }
+  .sw.llm { border-color: var(--accent); background: var(--accent-soft); }
+  .sw.code { border-color: var(--good); background: var(--good-soft); }
+  .sw.human { border-color: var(--brass); background: var(--brass-soft); }
+  .flow-wrap { overflow-x: auto; }
+  .flow { display: grid; grid-template-columns: repeat(7, minmax(118px, 1fr)); gap: 10px; min-width: 860px; align-items: stretch; }
+  .node { border: 1.5px solid; border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; align-content: start; position: relative; }
+  .node .n { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+  .node .k { font-size: 12px; color: var(--muted); line-height: 1.4; }
+  .node.llm { border-color: var(--accent); background: var(--accent-soft); }
+  .node.code { border-color: var(--good); background: var(--good-soft); }
+  .node.human { border-color: var(--brass); background: var(--brass-soft); }
+  .node + .node::before { content: "\2192"; position: absolute; left: -10px; top: 50%; transform: translate(-50%, -50%); color: var(--faint); font-size: 14px; }
+  .row-label { grid-column: 1 / -1; font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-top: 6px; }
+  .money { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(7, minmax(118px, 1fr)); gap: 10px; border: 1.5px dashed var(--crit); border-radius: 10px; padding: 10px; background: color-mix(in srgb, var(--crit-soft) 45%, transparent); }
+  .money .tag { grid-column: 1 / -1; font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--crit); }
+  .note { font-size: 13px; color: var(--muted); }
+
+  /* tables */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 640px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); font-weight: 500; background: var(--surface-2); }
+  tr:last-child td { border-bottom: 0; }
+  .pill { display: inline-block; font-family: var(--mono); font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+  .pill.haiku { color: var(--good); border-color: var(--good); background: var(--good-soft); }
+  .pill.sonnet { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
+  /* guards */
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .guard { border-top: 2px solid var(--good); padding-top: 10px; display: grid; gap: 4px; min-width: 0; }
+  .guard h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .guard p { font-size: 14px; color: var(--muted); }
+  .guard .ref { font-family: var(--mono); font-size: 12px; color: var(--faint); }
+
+  /* cost chart */
+  .chart { display: grid; gap: 14px; }
+  .bar-row { display: grid; grid-template-columns: minmax(150px, 260px) 1fr; gap: 14px; align-items: center; }
+  .bar-label { font-size: 14px; }
+  .track { position: relative; height: 28px; background: var(--surface-2); border-radius: 4px; }
+  .bar { position: absolute; inset: 0 auto 0 0; border-radius: 4px; display: flex; align-items: center; justify-content: flex-end; padding-right: 8px;
+    font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; color: var(--surface); font-weight: 600; }
+  .bar.bad { background: var(--crit); } .bar.mid { background: var(--brass); } .bar.ok { background: var(--good); }
+  .bar.short { justify-content: flex-start; padding-left: calc(100% + 8px); color: var(--ink); }
+  .ref-line { position: absolute; top: -6px; bottom: -6px; width: 0; border-left: 2px dashed var(--ink); opacity: .55; }
+  .axis { display: grid; grid-template-columns: minmax(150px, 260px) 1fr; gap: 14px; }
+  .axis-track { position: relative; height: 34px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .axis-track span { position: absolute; transform: translateX(-50%); white-space: nowrap; top: 0; }
+  .axis-track span.lo { top: 16px; }
+
+  /* bullets */
+  .bullets { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .b { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: var(--surface-2); display: grid; gap: 6px; align-content: start; }
+  .b .id { font-family: var(--mono); font-size: 12px; color: var(--brass); font-weight: 600; letter-spacing: .06em; }
+  .b h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .b p { font-size: 13px; color: var(--muted); }
+
+  footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; }
+  @media (prefers-reduced-motion: no-preference) { section { animation: none; } }
+</style>
+
+<div class="page">
+
+  <section class="hero">
+    <p class="kicker">SPR Financials · SecureGrowth Fixed Annuity · v2 blueprint</p>
+    <h1>SPR Servicing Desk</h1>
+    <p class="lede">A multi-agent desk for withdrawals and hardship cases. Language models read, explain and judge. Code routes every step and holds the authority to move money.</p>
+    <p class="never">The desk never moves money unless identity, the shown quote, the customer's explicit confirmation and an independent compliance approval of that exact proposal are all established, and it never grants a waiver.</p>
+    <div class="chips">
+      <div class="chip"><b>Framework</b>LangGraph</div>
+      <div class="chip"><b>Topology</b>Code-routed graph, fixed money path</div>
+      <div class="chip"><b>Models</b>Haiku 5.5 front · Sonnet 5.5 checker</div>
+      <div class="chip"><b>Comparison</b>Claude only · non-Claude judge</div>
+      <div class="chip"><b>As-of date</b><span class="mono">2024-12-01</span></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">One case through the desk</p>
+    <h2>The Concierge reads intent. Code picks every next step.</h2>
+    <div class="legend">
+      <span><i class="sw llm"></i>LLM judges inside the node</span>
+      <span><i class="sw code"></i>Code decides</span>
+      <span><i class="sw human"></i>A person decides</span>
+    </div>
+    <div class="flow-wrap">
+      <div class="flow">
+        <div class="row-label">Every turn</div>
+        <div class="node code"><span class="n">intake</span><span class="k">session, Gate A, as-of date, kill switches, budgets</span></div>
+        <div class="node llm"><span class="n">concierge</span><span class="k">Haiku · intent, amount, explicit yes</span></div>
+        <div class="node code"><span class="n">identity_gate</span><span class="k">Gate A, then Gate B challenge; 3 tries</span></div>
+        <div class="node code"><span class="n">account</span><span class="k">balance, year, allowance; no DOB or SSN</span></div>
+        <div class="node llm"><span class="n">knowledge</span><span class="k">Sonnet · cited answer, doc version in force</span></div>
+        <div class="node llm"><span class="n">respond</span><span class="k">Haiku · one outcome code per turn</span></div>
+        <div></div>
+
+        <div class="money">
+          <span class="tag">Money path · fixed order · no node can be skipped</span>
+          <div class="node llm"><span class="n">transaction</span><span class="k">Sonnet · calculator computes every figure</span></div>
+          <div class="node code"><span class="n">confirm</span><span class="k">explicit yes, after the quote, same amount</span></div>
+          <div class="node code"><span class="n">rules</span><span class="k">$25k / 50%, status, waiver, surrender, age 80+</span></div>
+          <div class="node llm"><span class="n">compliance</span><span class="k">Sonnet · coercion, third party, confusion</span></div>
+          <div class="node code"><span class="n">approval</span><span class="k">token only if approve and no flags</span></div>
+          <div class="node code"><span class="n">execute</span><span class="k">token checked, runs once, audit row</span></div>
+          <div></div>
+        </div>
+
+        <div class="row-label">When a person must decide</div>
+        <div class="node llm"><span class="n">case</span><span class="k">Haiku · packet for the reviewer</span></div>
+        <div class="node human"><span class="n">human_review</span><span class="k">graph pauses; reviewer approves, rejects or asks</span></div>
+        <div class="node code"><span class="n">execute</span><span class="k">same path, human approval recorded</span></div>
+      </div>
+    </div>
+    <p class="note">Edges are Python functions of the case state. The only model output that steers routing is the Concierge's intent, and every intent still passes the same gates.</p>
+  </section>
+
+  <section>
+    <p class="kicker">Agents, models and what each may touch</p>
+    <h2>Five agents, each with its own tools</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Agent</th><th>Model · effort</th><th>Tools it may call</th><th>It never</th></tr></thead>
+        <tbody>
+          <tr><td>Concierge</td><td><span class="pill haiku">Haiku 5.5</span> low</td><td><code>verify_identity</code></td><td>quotes, answers product facts, approves</td></tr>
+          <tr><td>Knowledge</td><td><span class="pill sonnet">Sonnet 5.5</span> medium</td><td><code>search_kb</code></td><td>reads account data</td></tr>
+          <tr><td>Transaction</td><td><span class="pill sonnet">Sonnet 5.5</span> medium</td><td><code>get_account</code> <code>quote</code> <code>propose</code></td><td>approves its own proposal, executes</td></tr>
+          <tr><td>Compliance</td><td><span class="pill sonnet">Sonnet 5.5</span> high</td><td><code>get_policy</code></td><td>executes, edits a proposal</td></tr>
+          <tr><td>Case</td><td><span class="pill haiku">Haiku 5.5</span> low</td><td><code>create_case</code></td><td>decides the case</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note"><code>execute</code> is not a tool any agent can call. Calling another role's tool is refused in code and logged. The model map is a starting point; the evals at the end of B3 confirm or change it.</p>
+  </section>
+
+  <section>
+    <p class="kicker">Where the authority lives</p>
+    <h2>Guards are code, tested with a scripted model</h2>
+    <div class="grid2">
+      <div class="guard"><h3>Both identity gates first</h3><p>No account node runs until Gate A (the record) and Gate B (this session's challenge) both pass.</p><span class="ref">FR-02 · GR-12</span></div>
+      <div class="guard"><h3>Quote, yes, token, then execute</h3><p>The token is an HMAC over the proposal hash. Change the amount and the token is void.</p><span class="ref">FR-08 · GR-16 to GR-18</span></div>
+      <div class="guard"><h3>Compliance cannot override a flag</h3><p>A rule flag sends the case to a person, whatever Compliance says.</p><span class="ref">FR-11</span></div>
+      <div class="guard"><h3>One withdrawal per proposal</h3><p>An idempotency key makes a replayed execute a no-op.</p><span class="ref">FR-09</span></div>
+      <div class="guard"><h3>Budgets stop runaway turns</h3><p>8 hops, 12 tool calls, 30 seconds per turn; $0.10 per case. Running out escalates.</p><span class="ref">FR-20 · D-10</span></div>
+      <div class="guard"><h3>Fail closed</h3><p>Checker or queue down, or execution switched off: nothing moves, the customer is told what happens next.</p><span class="ref">FR-21 · FR-26</span></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">Shared case state</p>
+    <h2>Every field has exactly one writer</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Field</th><th>Only writer</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr><td><code>session</code>, <code>switches</code>, <code>budgets</code>, <code>versions</code></td><td>intake</td><td>Gate A only; never DOB or SSN</td></tr>
+          <tr><td><code>session.gate_b</code>, <code>locked</code></td><td>identity_gate</td><td>3 failed tries lock the session</td></tr>
+          <tr><td><code>intent</code></td><td>concierge</td><td>intent, amount, explicit-yes flag</td></tr>
+          <tr><td><code>quote</code>, <code>proposal</code></td><td>transaction</td><td>the hash covers customer, amount and every figure</td></tr>
+          <tr><td><code>rule_flags</code></td><td>rules</td><td></td></tr>
+          <tr><td><code>compliance</code></td><td>compliance</td><td>decision and reasons</td></tr>
+          <tr><td><code>approval_token</code></td><td>approval edge</td><td>single use</td></tr>
+          <tr><td><code>execution</code></td><td>execute</td><td>transaction ID, idempotency key</td></tr>
+          <tr><td><code>case_packet</code>, <code>human_decision</code></td><td>case · human_review</td><td>packet is scrubbed</td></tr>
+          <tr><td><code>reply</code>, <code>outcome</code></td><td>respond</td><td>one outcome code per turn</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">A write from any other node breaks the contract and fails the case closed (FR-19). Typed in <code>contracts/state.py</code>.</p>
+  </section>
+
+  <section>
+    <p class="kicker">Two sources of truth</p>
+    <h2>Numbers from records, narrative from documents</h2>
+    <div class="grid2">
+      <div class="guard"><h3><code>desk.db</code> (SQLite)</h3><p>Accounts without restricted fields; an <code>identity</code> table only the gate can call; transactions, proposals, cases; an append-only audit table.</p><span class="ref">PG-01 · PG-04 · PG-10</span></div>
+      <div class="guard"><h3><code>knowledge/</code> → Chroma</h3><p>Versioned documents with an ID, version and effective date on every chunk. Includes the two new policy documents and a superseded fee schedule.</p><span class="ref">PG-05 · PG-06 · FR-24</span></div>
+      <div class="guard"><h3>One clock, one scrubber</h3><p>Contract year and age derive from the as-of date. One function strips DOB and SSN digits from anything bound for a prompt, trace, log or packet.</p><span class="ref">D-04 · FR-23</span></div>
+      <div class="guard"><h3>Trace and audit kept apart</h3><p>LangSmith traces each case for debugging. The audit table answers a regulator: <code>python -m agents.audit &lt;case_id&gt;</code>.</p><span class="ref">FR-25 · FR-27</span></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">Why the model map looks like this</p>
+    <h2>Cost per routine withdrawal, before any code exists</h2>
+    <div class="chart" role="img" aria-label="Cost per routine withdrawal: Sonnet everywhere uncached 0.104 dollars, Sonnet everywhere cached 0.051 dollars, Haiku front with Sonnet checker cached 0.014 dollars. Target 0.042, hard budget 0.10.">
+      <div class="bar-row">
+        <span class="bar-label">Sonnet 5.5 everywhere, no caching</span>
+        <div class="track"><div class="bar bad" style="width:86.7%">$0.104</div><i class="ref-line" style="left:35%"></i><i class="ref-line" style="left:83.3%"></i></div>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">Sonnet 5.5 everywhere, cached</span>
+        <div class="track"><div class="bar mid" style="width:42.5%">$0.051</div><i class="ref-line" style="left:35%"></i><i class="ref-line" style="left:83.3%"></i></div>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">Haiku front, Sonnet checker, cached</span>
+        <div class="track"><div class="bar ok short" style="width:11.7%">$0.014</div><i class="ref-line" style="left:35%"></i><i class="ref-line" style="left:83.3%"></i></div>
+      </div>
+      <div class="axis">
+        <span></span>
+        <div class="axis-track">
+          <span style="left:0%">$0</span>
+          <span style="left:35%">target $0.042</span>
+          <span class="lo" style="left:83.3%">budget $0.10</span>
+          <span style="left:100%; transform:translateX(-100%)">$0.12</span>
+        </div>
+      </div>
+    </div>
+    <p class="note">Estimates from the cost model, replaced by measured token counts in B1. 83% of a withdrawal's input is cacheable, so every prompt is built stable-first: tools, system prompt, session context, then the conversation.</p>
+  </section>
+
+  <section>
+    <p class="kicker">Delivery · tracer bullets</p>
+    <h2>Each bullet is a complete customer path</h2>
+    <div class="bullets">
+      <div class="b"><span class="id">B1</span><h3>Cited product answer</h3><p>intake, concierge, knowledge, respond; knowledge index; tool scope; tracing; chat UI.</p></div>
+      <div class="b"><span class="id">B2</span><h3>Identity and account view</h3><p>identity gate and lockout, account view, identity table split, scrubber, clock.</p></div>
+      <div class="b"><span class="id">B3</span><h3>Routine withdrawal</h3><p>transaction, confirm, rules, compliance, approval token, idempotent execute, audit.</p></div>
+      <div class="b"><span class="id">B4</span><h3>Human review path</h3><p>case packet, graph interrupt, reviewer queue, superseded document version.</p></div>
+      <div class="b"><span class="id">B5</span><h3>Hard cases</h3><p>budgets, fail-closed edges, kill switch, vulnerable-customer signals, audit rebuild.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Sources: <code>docs/blueprint/README.md</code>, <code>docs/PRD.md</code>, <code>docs/COST_MODEL.md</code>, ADR 0001 to 0004.</span>
+    <span>All customer data in this project is synthetic.</span>
+  </footer>
+</div>
