@@ -7,7 +7,7 @@
 - **One-time:** `.github/night-shift/setup_repo.sh debudash/SPRServicingAgent data agents quality`, then the secrets
   `AGENT_PAT`, `CLAUDE_TOKEN_DEVA`, `CLAUDE_TOKEN_DEVB`, `CLAUDE_TOKEN_REVIEW`. `ANTHROPIC_API_KEY` is only for the manual
   `evals` workflow.
-- **Protected paths (SPR):** besides the kit's list, agent PRs may not touch `contracts/`, `evals/golden/` or `baseline/`.
+- **Protected paths (SPR):** besides the kit's list, agent PRs may not touch `contracts/`, `evals/golden/`, `baseline/` or `knowledge/`.
 - **Required checks:** `test` (CI) and `verdict` (review). Paid evals are manual (`evals` workflow), not a gate yet.
 
 Agents run on GitHub's runners after every merge to main (and every 20 minutes as a backstop), one per lane, so laptops can sleep. Each run: pick the next ready issue in the lane, run Claude Code headless on it, open a PR, and auto-merge it once `test` (CI) and `verdict` (independent Claude review) pass.

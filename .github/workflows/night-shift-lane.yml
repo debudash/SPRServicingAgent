@@ -286,11 +286,12 @@ jobs:
               OUTCOME="done but no commits"
             elif ! git fetch -q "$BUNDLE" "refs/heads/$BRANCH:refs/heads/$BRANCH"; then
               OUTCOME="rejected: unreadable bundle"
-            elif [ "${PROTECT_PATHS:-true}" != "false" ] && git diff --no-renames --name-only "origin/$MAIN_BRANCH...$BRANCH"                  | grep -qE '^\.github/|(^|/)\.claude/|(^|/)CLAUDE\.md$|(^|/)AGENTS\.md$|^\.mcp\.json$|^contracts/|^evals/golden/|^baseline/'; then
+            elif [ "${PROTECT_PATHS:-true}" != "false" ] && git diff --no-renames --name-only "origin/$MAIN_BRANCH...$BRANCH"                  | grep -qE '^\.github/|(^|/)\.claude/|(^|/)CLAUDE\.md$|(^|/)AGENTS\.md$|^\.mcp\.json$|^contracts/|^evals/golden/|^baseline/|^knowledge/'; then
               # These control the picker, the review gate and every agent's instructions: humans only.
               # SPR additions: contracts/ (interfaces between lanes), evals/golden/ (the answer key and
-              # thresholds: an agent must never pass a ticket by editing the test), baseline/ (frozen v1).
-              OUTCOME="rejected: agent changed a protected path (.github/, .claude/, CLAUDE.md, AGENTS.md, .mcp.json, contracts/, evals/golden/, baseline/)"
+              # thresholds: an agent must never pass a ticket by editing the test), baseline/ (frozen v1),
+              # knowledge/ (product facts and policies the desk answers from).
+              OUTCOME="rejected: agent changed a protected path (.github/, .claude/, CLAUDE.md, AGENTS.md, .mcp.json, contracts/, evals/golden/, baseline/, knowledge/)"
             else
               git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" \
                 "refs/heads/$BRANCH:refs/heads/$BRANCH"

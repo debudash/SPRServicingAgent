@@ -17,7 +17,7 @@ Python 3.12. Install with `pip install -r requirements-dev.txt`. Run from the re
 
 ## Agent coordination
 See AGENT_RULES.md: lanes and ownership, one issue = one branch = one PR, never push to main, never edit
-integrator paths (`.github/`, `contracts/`, `evals/golden/`, `baseline/`, `CLAUDE.md`, ...), and write one
+integrator paths (`.github/`, `contracts/`, `evals/golden/`, `knowledge/`, `baseline/`, `CLAUDE.md`, ...), and write one
 line to a new file `progress/<lane>/<YYYY-MM-DD>-issue-<n>.md` per change.
 
 ## Project rules

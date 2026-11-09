@@ -6,3 +6,8 @@ Defects found in review are the evidence for workstream F (ADR 0002), so they al
 
 | ID | Date | Symptom (one line) | Found by | Fix commit |
 |----|------|--------------------|----------|------------|
+| #21 | 2026-11-09 | Approval accepted a token on a hold/escalate decision and any approver string | review on PR #20 (both axes) | 035ea16 |
+| #22 | 2026-11-09 | Quote validated a wrong surrender charge | review on PR #20 (standards) | 78a2bd1 |
+| #23 | 2026-11-09 | Intake could replace the whole session, resetting the identity lockout | review on PR #20 (standards) | e3f6042 |
+| #24 | 2026-11-09 | Large-withdrawal policy sent inactive accounts to a reviewer, contradicting FR-07 | review on PR #20 (spec) | 89a5d84 |
+| #25 | 2026-11-09 | Contract tests could pass on a regression (float rounding, vacuous globs, shallow checks) | review on PR #20 (standards) | 8975acd |

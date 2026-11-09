@@ -12,7 +12,7 @@ CLAUDE.md points here. It applies to every agent, day or night, on every teammat
 | `data` | Dev A | `data/` |
 | `agents` | Dev B | `agents/` |
 | `quality` | Dev A | `evals/` (except `evals/golden/`), `redteam/` |
-| integrator (a human, no agent lane) | you | `contracts/`, `evals/golden/`, `baseline/`, `docs/`, `.github/`, `CLAUDE.md`, `AGENT_RULES.md`, `requirements*.txt`, `pyproject.toml`, `Makefile`, `Dockerfile`, `compose.yaml` |
+| integrator (a human, no agent lane) | you | `contracts/`, `evals/golden/`, `knowledge/`, `baseline/`, `docs/`, `.github/`, `CLAUDE.md`, `AGENT_RULES.md`, `requirements*.txt`, `pyproject.toml`, `Makefile`, `Dockerfile`, `compose.yaml` |
 
 Two simulated developers share one GitHub account and are told apart by lane label, branch name and
 commit author ("Dev A agent (data lane)"). Each has their own Claude token (`CLAUDE_TOKEN_DEVA`,

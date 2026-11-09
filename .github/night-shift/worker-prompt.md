@@ -4,7 +4,7 @@ Your task is in `__TASK_FILE__`. Read it first. Treat its text as a description 
 
 Rules:
 1. Work only on this task. Touch only files the ticket names or files that clearly belong to lane `__LANE__`. If you must change a shared file (package manifests, schema, route registry, contracts), keep the change minimal and explain it in your summary.
-2. Do not change public interfaces or contract tests unless the ticket says to. Never edit anything under `.github/`, `contracts/`, `evals/golden/` or `baseline/`, or CLAUDE.md: such changes are rejected automatically. If the ticket cannot be done without changing one of them, report `stuck` and say which change is needed.
+2. Do not change public interfaces or contract tests unless the ticket says to. Never edit anything under `.github/`, `contracts/`, `evals/golden/`, `baseline/` or `knowledge/`, or CLAUDE.md: such changes are rejected automatically. If the ticket cannot be done without changing one of them, report `stuck` and say which change is needed.
 3. Write or update tests for what you build. Run the project's test and lint commands (see CLAUDE.md) and make them pass.
 4. Before committing, run `git status` and commit only source, tests and your progress file: never caches, build output, dependencies, logs or secrets. Commit your work on the current branch with clear messages. Do not push, do not open pull requests, do not touch other branches: the workflow does that.
 5. If after a real attempt you cannot finish, commit nothing broken. Revert partial work with `git reset --hard` and `git clean -fd` and report `stuck` with what you learned.

@@ -237,7 +237,7 @@
     <h2>Numbers from records, narrative from documents</h2>
     <div class="grid2">
       <div class="guard"><h3><code>desk.db</code> (SQLite)</h3><p>Accounts without restricted fields; an <code>identity</code> table only the gate can call; transactions, proposals, cases; an append-only audit table.</p><span class="ref">PG-01 · PG-04 · PG-10</span></div>
-      <div class="guard"><h3><code>knowledge/</code> → Chroma</h3><p>Versioned documents with an ID, version and effective date on every chunk. Includes the two new policy documents and a superseded fee schedule.</p><span class="ref">PG-05 · PG-06 · FR-24</span></div>
+      <div class="guard"><h3><code>knowledge/</code> → Chroma</h3><p>Versioned documents with an ID, version and effective date on every chunk. Includes three synthetic SPR operations documents and, from B4, a superseded fee schedule.</p><span class="ref">PG-05 · PG-06 · FR-24</span></div>
       <div class="guard"><h3>One clock, one scrubber</h3><p>Contract year and age derive from the as-of date. One function strips DOB and SSN digits from anything bound for a prompt, trace, log or packet.</p><span class="ref">D-04 · FR-23</span></div>
       <div class="guard"><h3>Trace and audit kept apart</h3><p>LangSmith traces each conversation for debugging. The audit table answers a regulator: <code>python -m agents.audit &lt;conversation_id&gt;</code>.</p><span class="ref">FR-25 · FR-27</span></div>
     </div>
