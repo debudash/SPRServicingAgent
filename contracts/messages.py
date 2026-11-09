@@ -199,12 +199,31 @@ class ComplianceDecision(Message):
         return self
 
 
+COMPLIANCE_DECISIONS = frozenset({Decision.APPROVE, Decision.HOLD, Decision.ESCALATE})
+REVIEWER_DECISIONS = frozenset({Decision.APPROVE, Decision.REJECT, Decision.REQUEST_INFO})
+# "compliance", or "human:<reviewer_id>" for a named reviewer.
+APPROVER_PATTERN = r"^(compliance|human:[A-Za-z0-9_.-]+)$"
+
+
 class Approval(Message):
     approval_id: str
     proposal_id: str
-    approver: str  # "compliance" or "human:<reviewer_id>"
+    approver: str = Field(pattern=APPROVER_PATTERN)
     decision: Decision
-    token_hmac: str | None = None  # present only on an approval to execute
+    token_hmac: str | None = None
+
+    # Issue #21 (found by /code-review on PR #20): the token rule lived only in a comment, so a
+    # token on a hold or escalation validated. A token is the authority to move money (GR-18):
+    # it must exist exactly when the decision is APPROVE, and each approver may only make the
+    # decisions its role allows.
+    @model_validator(mode="after")
+    def _token_only_on_approve(self) -> "Approval":
+        allowed = COMPLIANCE_DECISIONS if self.approver == "compliance" else REVIEWER_DECISIONS
+        if self.decision not in allowed:
+            raise ValueError(f"{self.approver} cannot decide {self.decision}")
+        if (self.decision is Decision.APPROVE) != (self.token_hmac is not None):
+            raise ValueError("a token is issued exactly when the decision is approve")
+        return self
 
 
 class HumanDecision(Message):
@@ -223,7 +242,7 @@ class HumanDecision(Message):
 class Execution(Message):
     transaction_id: str
     proposal_id: str
-    approved_by: str
+    approved_by: str = Field(pattern=APPROVER_PATTERN)  # issue #21
 
 
 # ---------- Cases and replies ----------

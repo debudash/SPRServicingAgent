@@ -12,8 +12,10 @@ from pydantic import ValidationError
 from contracts.classification import COLUMNS, RESTRICTED_FIELDS, Classification
 from contracts.messages import (
     AccountView,
+    Approval,
     ComplianceDecision,
     Decision,
+    Execution,
     HumanDecision,
     Intent,
     IntentKind,
@@ -226,3 +228,48 @@ def test_intent_kinds_cover_the_routes_in_the_blueprint() -> None:
     assert {"product_question", "withdrawal", "hardship_waiver", "third_party", "out_of_scope"} <= {
         k.value for k in IntentKind
     }
+
+
+# ---------- #21: Approval accepted a token on a non-approve decision ----------
+# Found by /code-review on PR #20 (both axes). A token is the authority to move money (GR-18).
+@pytest.mark.parametrize(
+    ("approver", "decision", "token"),
+    [
+        ("compliance", Decision.HOLD, "hmac"),  # token on a hold
+        ("compliance", Decision.ESCALATE, "hmac"),  # token on an escalation
+        ("compliance", Decision.APPROVE, None),  # approval to execute without a token
+        ("compliance", Decision.REJECT, None),  # reviewer-only decision from Compliance
+        ("human:r1", Decision.HOLD, None),  # Compliance-only decision from a reviewer
+        ("someone", Decision.APPROVE, "hmac"),  # unknown approver
+        ("human:", Decision.APPROVE, "hmac"),  # reviewer with no ID
+    ],
+)
+def test_issue_21_approval_refuses_invalid_combinations(
+    approver: str, decision: Decision, token: str | None
+) -> None:
+    with pytest.raises(ValidationError):
+        Approval(
+            approval_id="A1",
+            proposal_id="P1",
+            approver=approver,
+            decision=decision,
+            token_hmac=token,
+        )
+
+
+def test_issue_21_valid_approvals_pass() -> None:
+    Approval(
+        approval_id="A1",
+        proposal_id="P1",
+        approver="compliance",
+        decision=Decision.APPROVE,
+        token_hmac="hmac",
+    )
+    Approval(approval_id="A2", proposal_id="P1", approver="compliance", decision=Decision.HOLD)
+    Approval(approval_id="A3", proposal_id="P1", approver="human:r1", decision=Decision.REJECT)
+
+
+def test_issue_21_execution_names_a_valid_approver() -> None:
+    with pytest.raises(ValidationError):
+        Execution(transaction_id="T1", proposal_id="P1", approved_by="anyone")
+    Execution(transaction_id="T1", proposal_id="P1", approved_by="human:r1")
