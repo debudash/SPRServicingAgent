@@ -178,7 +178,16 @@ def test_stores_conform_to_the_ports(conn: sqlite3.Connection) -> None:
 
 
 # ---------- the identity table is reachable only through data/identity.py (PG-04) ----------
-_FORBIDDEN = re.compile(r"ssn_last4|(FROM|INTO|JOIN|UPDATE)\s+identity", re.IGNORECASE)
+# Issue #66 (found by /code-review on PR #63): `dob` was not covered, so SQL reading the column
+# (or a comma join on identity) passed. `dob` is flagged only inside SQL (a line with a SQL
+# keyword before it), because the word is common in non-SQL code such as the credential masks.
+_FORBIDDEN = re.compile(
+    r"ssn_last4"
+    r"|\b(FROM|INTO|JOIN|UPDATE)\s+identity\b"
+    r"|\bFROM\s+\w+(\s+\w+)?\s*,\s*identity\b"
+    r"|\b(SELECT|WHERE|SET|INSERT|UPDATE)\b[^\n#]*\bdob\b",
+    re.IGNORECASE,
+)
 _ALLOWED = {REPO / "data" / "identity.py"}
 
 
@@ -221,3 +230,26 @@ def test_issue_65_a_malformed_seed_dob_is_not_in_the_error(tmp_path: Path) -> No
         seed_starter_kit(c, kit)
     assert "March 58" not in _chain_text(info.value)
     assert c.execute("SELECT COUNT(*) FROM accounts WHERE customer_id='SPR-1001'").fetchone() == (0,)
+
+
+# ---------- #66: the isolation test let SQL read the dob column ----------
+# Found by /code-review on PR #63 (spec).
+@pytest.mark.parametrize(
+    "source",
+    [
+        '"SELECT dob FROM accounts a, identity i WHERE a.customer_id = i.customer_id"',
+        '"SELECT name, dob FROM people"',
+        "'UPDATE accounts SET dob = ?'",
+        '"SELECT * FROM accounts, identity"',
+    ],
+)
+def test_issue_66_sql_naming_dob_or_joining_identity_is_flagged(source: str) -> None:
+    assert _FORBIDDEN.search(source)
+
+
+@pytest.mark.parametrize(
+    "source",
+    ['DOB_MASK = "[DOB]"', 'dob = date.fromisoformat(a["dob"])', "# the customer's dob"],
+)
+def test_issue_66_non_sql_mentions_of_dob_are_allowed(source: str) -> None:
+    assert not _FORBIDDEN.search(source)
