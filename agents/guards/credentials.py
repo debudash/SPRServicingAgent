@@ -10,8 +10,8 @@ retry, while missing one leaks a restricted value (GR-09).
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from datetime import date
+from typing import NoReturn
 
 DOB_MASK = "[DOB]"
 SSN4_MASK = "[SSN-4]"
@@ -67,12 +67,19 @@ _SPELLED_RUN = re.compile(rf"\b{_WORD}(?:[\s,-]+{_WORD}){{3,}}\b", re.IGNORECASE
 _FOUR_DIGITS = re.compile(r"\b\d{4}\b")
 
 
-@dataclass(frozen=True)
 class Credentials:
-    """Candidates from one turn. Never printed: `repr` shows only which values are present."""
+    """Candidates from one turn, readable only as attributes.
 
-    dob: date | None = field(default=None, repr=False)
-    last4: str | None = field(default=None, repr=False)
+    Issue #70 (found by /code-review on PR #64): as a dataclass, `asdict`, the generated
+    equality and pickling all exposed the values. A slotted class with a masked `repr`,
+    identity equality and pickling refused leaves `.dob` and `.last4` as the only way in.
+    """
+
+    __slots__ = ("dob", "last4")
+
+    def __init__(self, dob: date | None = None, last4: str | None = None) -> None:
+        self.dob = dob
+        self.last4 = last4
 
     @property
     def complete(self) -> bool:
@@ -83,7 +90,8 @@ class Credentials:
         last4 = "<masked>" if self.last4 else None
         return f"Credentials(dob={dob}, last4={last4})"
 
-    __str__ = __repr__
+    def __reduce__(self) -> NoReturn:
+        raise TypeError("Credentials cannot be pickled (ADR 0005)")
 
 
 def _to_date(m: re.Match[str]) -> date | None:

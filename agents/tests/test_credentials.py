@@ -104,3 +104,20 @@ def test_runner_masks_the_turn_before_anything_sees_it() -> None:
         assert leaked not in seen_by_model
         assert leaked not in result.model_dump_json()
     assert DOB_MASK in state.transcript[0].text
+
+
+# ---------- #70: values were reachable through asdict, equality and pickling ----------
+# Found by /code-review on PR #64 (standards).
+def test_issue_70_credentials_expose_their_values_only_as_attributes() -> None:
+    import dataclasses
+    import pickle
+
+    a, b = Credentials(dob=DOB, last4="7823"), Credentials(dob=DOB, last4="7823")
+    assert not dataclasses.is_dataclass(a)
+    with pytest.raises(TypeError):
+        dataclasses.asdict(a)  # type: ignore[call-overload]
+    assert a != b  # identity, not value: equality cannot be used to probe a guess
+    with pytest.raises(TypeError):
+        pickle.dumps(a)
+    assert not hasattr(a, "__dict__")
+    assert (a.dob, a.last4) == (DOB, "7823")
