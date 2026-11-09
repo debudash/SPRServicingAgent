@@ -33,6 +33,15 @@ line to a new file `progress/<lane>/<YYYY-MM-DD>-issue-<n>.md` per change.
   only through the manual `evals` workflow.
 - **Every served component runs in Docker** (`compose.yaml`), never as a bare host process.
 
+## Review (who reviews what)
+Full table in AGENT_RULES.md; reasons in `docs/decisions/0002-two-axis-review.md`.
+- Agent PRs: the automatic `verdict` review is the gate.
+- Human PRs that touch `contracts/`, `evals/golden/` or the money path (quote, execute, approvals, rule
+  engine, Compliance, human approval, identity gates): run `/code-review` before merge and post its
+  findings as a PR comment. Money-path agent PRs get the same spot-check.
+- Every PR fills in "Reviewed by" in the PR template, with the reason when no review is required.
+- A real defect found in review becomes a bug issue and follows "Fixing a bug" below.
+
 ## Fixing a bug
 1. Open (or use) an issue in the bug format: Issue, Root cause, Fix, Test.
 2. Write a failing test that reproduces it first. Name the issue ID in the test and add a one-line

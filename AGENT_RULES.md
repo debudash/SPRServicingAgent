@@ -26,6 +26,24 @@ Agent PRs that touch an integrator path are rejected automatically by the publis
 - Never push to `main`. Every change lands through a PR whose checks pass (`test` and, for agent PRs, `verdict`).
 - PR body starts with `Closes #<n>`.
 
+## Who reviews what
+Two-axis review (ADR 0002): **standards** (does it follow CLAUDE.md and this file?) and **spec** (does it do
+what the issue and PRD asked?). AI does the review; a human approves the merge.
+
+| PR | Review before merge |
+|---|---|
+| Agent PR (`agent/...`) | `verdict`, the automatic independent review. Required check. |
+| Agent PR touching the money path | `verdict`, plus a human-run `/code-review` spot-check. Night-shift PRs auto-merge, so money-path tickets are never labelled `night-safe` (see Night shift). |
+| Human PR touching `contracts/`, `evals/golden/` or the money path | `/code-review`, with its findings posted as a PR comment before merge. |
+| Any other human PR | Not required. Say why in the PR template's "Reviewed by" section. |
+
+**Money path** means code that quotes, executes or approves a withdrawal, or decides identity: quote
+calculation, execution, approval tokens, the rule engine, Compliance decisions, the human approval path and
+the identity gates (bullets B2 to B4).
+
+Every real defect a review finds becomes a bug issue and goes through the bug workflow in CLAUDE.md
+(failing test first, then the fix, then a row in `docs/ISSUE_LOG.md` with "found by: review on PR #n").
+
 ## Contracts first
 - Wave 0 merges the interfaces, stubs and contract tests before any lane starts. After that, only the integrator changes them, through a human PR that bumps `CONTRACTS_VERSION`.
 - Build against the contract, not against another lane's implementation.
@@ -41,5 +59,6 @@ Agent PRs that touch an integrator path are rejected automatically by the publis
 
 ## Night shift
 - Only issues labeled `night-safe` run unattended. Label only tickets with clear acceptance criteria and no open design questions.
+- Never label a money-path ticket `night-safe`: night-shift PRs auto-merge, which would skip the money-path spot-check.
 - If `main` is red, every lane except `FIX_LANE` stops taking work until it is green.
 - Kill switch: set the repo variable `AGENTS_ENABLED` to `false`.
