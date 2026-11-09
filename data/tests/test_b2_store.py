@@ -178,7 +178,7 @@ def test_stores_conform_to_the_ports(conn: sqlite3.Connection) -> None:
 
 
 # ---------- the identity table is reachable only through data/identity.py (PG-04) ----------
-_FORBIDDEN = re.compile(r"ssn_last4|\b(FROM|INTO|JOIN|UPDATE)\s+identity\b", re.IGNORECASE)
+_FORBIDDEN = re.compile(r"ssn_last4|(FROM|INTO|JOIN|UPDATE)\s+identity", re.IGNORECASE)
 _ALLOWED = {REPO / "data" / "identity.py"}
 
 
@@ -191,3 +191,33 @@ def test_only_data_identity_touches_the_identity_table() -> None:
             scanned += 1
             assert not _FORBIDDEN.search(path.read_text(encoding="utf-8")), path
     assert scanned >= 15
+
+
+# ---------- #65: a malformed stored DOB was quoted in the exception message ----------
+# Found by /code-review on PR #63 (standards): the runner logs exceptions, so the value would leak.
+def _chain_text(exc: BaseException) -> str:
+    parts: list[str] = []
+    e: BaseException | None = exc
+    while e is not None:
+        parts.append(repr(e))
+        e = e.__cause__ or (None if e.__suppress_context__ else e.__context__)
+    return " ".join(parts)
+
+
+def test_issue_65_a_malformed_stored_dob_is_not_in_the_error(conn: sqlite3.Connection) -> None:
+    conn.execute("UPDATE identity SET dob = '19X8-03-14' WHERE customer_id = 'SPR-1001'")
+    with pytest.raises(ValueError) as info:
+        SqliteIdentityCheck(conn).age_band("SPR-1001", AS_OF)
+    assert "19X8" not in _chain_text(info.value)
+    assert "SPR-1001" in str(info.value)
+
+
+def test_issue_65_a_malformed_seed_dob_is_not_in_the_error(tmp_path: Path) -> None:
+    kit = tmp_path / "accounts.json"
+    original = (REPO / "problemstmt/spr_starter_kit/data/accounts.json").read_text("utf-8")
+    kit.write_text(original.replace('"1958-03-14"', '"14th of March 58"'), encoding="utf-8")
+    c = open_db(tmp_path / "bad.db")
+    with pytest.raises(ValueError) as info:
+        seed_starter_kit(c, kit)
+    assert "March 58" not in _chain_text(info.value)
+    assert c.execute("SELECT COUNT(*) FROM accounts WHERE customer_id='SPR-1001'").fetchone() == (0,)

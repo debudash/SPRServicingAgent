@@ -6,7 +6,6 @@ through data/identity.py and nowhere else.
 
 import json
 import sqlite3
-from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -67,7 +66,7 @@ def _insert_account(conn: sqlite3.Connection, identity: SqliteIdentityCheck, a: 
             a.get("contract_year"),
         ),
     )
-    identity.store(cid, date.fromisoformat(a["dob"]), str(a["last4_ssn"]))
+    identity.store(cid, str(a["dob"]), str(a["last4_ssn"]))
     for b in a.get("beneficiaries", []):
         conn.execute(
             "INSERT INTO beneficiaries (customer_id, name, relationship, percentage) "
