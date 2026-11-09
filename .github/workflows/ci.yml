@@ -1,0 +1,39 @@
+# CI for every PR and every push to main.
+#   test    REQUIRED. Lint, types, unit and contract tests (`make check`), plus the night-shift picker tests.
+#           No network calls and no API credits. The night-shift picker reads this workflow's runs on main
+#           to decide whether main is green, so keep the file name (or set the CI_WORKFLOW repo variable).
+#   docker  Advisory. Builds the image and runs the same checks inside it.
+# Paid LLM evals are NOT here: they run by hand at milestones (see evals.yml).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: "requirements*.txt" }
+      - name: Install the stack
+        run: python -m pip install -r requirements-dev.txt
+      - name: Night-shift picker tests
+        run: make picker-test
+      - name: Lint, types, tests
+        run: make check
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run checks in the container
+        run: docker compose run --rm checks

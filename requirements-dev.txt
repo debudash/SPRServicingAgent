@@ -1,0 +1,5 @@
+# Everything CI and the night-shift agents install. Same file in both places, so "works for the agent" = "works in CI".
+-r requirements.txt
+pytest==9.2.0
+ruff==0.17.4
+mypy==2.4.1

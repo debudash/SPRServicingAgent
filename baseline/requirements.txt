@@ -1,0 +1,23 @@
+# SPR Financials servicing agent — dependencies (loosely pinned; a demo).
+
+# Agent framework
+langchain>=0.3
+langchain-core>=0.3
+
+# The three benchmarked model providers (same agent runs on each)
+langchain-anthropic>=0.3     # Claude
+langchain-openai>=0.2        # GPT-4o
+langchain-google-genai>=2.0  # Gemini
+
+# RAG over the knowledge base (embedded, local, offline embeddings)
+langchain-chroma>=0.1
+langchain-huggingface>=0.1
+langchain-text-splitters>=0.3
+chromadb>=0.5
+sentence-transformers>=3.0
+
+# UI + utilities
+streamlit>=1.38
+python-dotenv>=1.0
+
+# Customer data is plain JSON (stdlib); no database needed.

@@ -1,4 +1,5 @@
-# evals package: the graded centerpiece.
-# dataset.py   -> test cases (ground truth) + the weighted scoring matrix (WEIGHTS)
-# benchmark.py -> runs the same agent on each model; scores accuracy / safety /
-#                 cost / latency; writes results.md + a winner recommendation.
+"""Eval harness and metrics. Lane: `quality` (Dev A).
+
+`evals/golden/` (the answer key and thresholds) is owned by the integrator: agent PRs that touch it
+are rejected, so no ticket can pass by editing the test.
+"""
