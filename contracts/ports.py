@@ -15,7 +15,7 @@ from typing import Protocol
 
 from pydantic import AwareDatetime, Field, JsonValue
 
-from contracts.messages import Message
+from contracts.messages import Citation, Message
 from contracts.outcomes import Outcome
 from contracts.tools import Node, Step
 
@@ -60,7 +60,12 @@ class AuditEvent(StrEnum):
 
 
 class AuditRecord(Message):
-    """One audit row as written. `payload` must already be scrubbed (FR-23)."""
+    """One audit row as written.
+
+    `payload` must already be scrubbed (FR-23): a precondition on the caller, checked by the
+    restricted-field eval, not by this type. `versions` holds the keys of `state.Versions`:
+    `contracts`, `models`, `prompts`, `documents`.
+    """
 
     audit_id: int = Field(ge=1)
     conversation_id: str
@@ -105,6 +110,9 @@ class AuditLog(Protocol):
 
 # ---------- running the desk (evals, UI) ----------
 class Usage(Message):
+    """Model usage for one turn, summed over every model call in it. `cost_micros` is in
+    millionths of a US dollar (100_000 = $0.10), at the prices in docs/COST_MODEL.md."""
+
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
     cache_read_tokens: int = Field(default=0, ge=0)
@@ -120,7 +128,7 @@ class TurnResult(Message):
     reply_text: str
     outcome: Outcome
     reference: str | None = None
-    citations: tuple[str, ...] = ()  # "doc_id vN §section"
+    citations: tuple[Citation, ...] = ()  # structured: doc_id, version, section (M-06)
     steps: tuple[Step, ...] = ()  # trace steps this turn, in order
     nodes: tuple[Node, ...] = ()  # nodes visited this turn, in order
     usage: Usage = Usage()

@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from pydantic import JsonValue, ValidationError
 
+from contracts.messages import Citation
 from contracts.outcomes import Outcome
 from contracts.ports import (
     AuditEvent,
@@ -54,7 +55,7 @@ def test_turn_result_carries_what_the_scorer_reads() -> None:
         turn=1,
         reply_text="3% in year 5",
         outcome=Outcome.ANSWERED,
-        citations=("fee_schedule v1 §Surrender Charges",),
+        citations=(Citation(doc_id="fee_schedule", version=1, section="Surrender Charges"),),
         steps=(Step.SEARCH_KB,),
         nodes=(Node.INTAKE, Node.CONCIERGE, Node.KNOWLEDGE, Node.RESPOND),
     )
