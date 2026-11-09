@@ -39,13 +39,22 @@ _MONTH = "(?P<mon>" + "|".join(sorted(_MONTHS, key=len, reverse=True)) + r")\.?"
 _DAY = r"(?P<d>\d{1,2})(?:st|nd|rd|th)?"
 _YEAR = r"(?P<y>(?:19|20)\d{2})"
 
+# Issue #68 (found by /code-review on PR #64): two-digit years, dotted, year-first slashed and
+# compact dates were not captured and reached the model raw.
 _DATE_PATTERNS = [
-    re.compile(r"\b(?P<y>\d{4})-(?P<m>\d{1,2})-(?P<d>\d{1,2})\b"),  # 1958-03-14
+    re.compile(r"\b(?P<y>\d{4})[-/](?P<m>\d{1,2})[-/](?P<d>\d{1,2})\b"),  # 1958-03-14, 1958/03/14
     re.compile(r"\b(?P<m>\d{1,2})[/-](?P<d>\d{1,2})[/-](?P<y>\d{4})\b"),  # 03/14/1958
+    re.compile(r"\b(?P<m>\d{1,2})[/-](?P<d>\d{1,2})[/-](?P<yy>\d{2})\b"),  # 3/14/58
+    re.compile(r"\b(?P<d>\d{1,2})\.(?P<m>\d{1,2})\.(?P<y>\d{4})\b"),  # 14.03.1958, day first
+    re.compile(r"\b(?P<y>(?:19|20)\d{2})(?P<m>[01]\d)(?P<d>[0-3]\d)\b"),  # 19580314
     re.compile(rf"\b{_MONTH}\s+{_DAY},?\s+{_YEAR}\b", re.IGNORECASE),  # March 14, 1958
     re.compile(rf"\b{_DAY}\s+(?:of\s+)?{_MONTH},?\s+{_YEAR}\b", re.IGNORECASE),  # 14 Mar 1958
 ]
-_FULL_SSN = re.compile(r"\b\d{3}[- ]?\d{2}[- ]?(?P<last4>\d{4})\b")
+_FULL_SSN = re.compile(r"\b\d{3}[- ]?\d{2}[- ]?(?P<last4>\d{4})\b")  # after an SSN word
+_SEPARATED_SSN = re.compile(r"\b\d{3}[- ]\d{2}[- ](?P<last4>\d{4})\b")  # #68: with no word too
+_BIRTH_WORD = re.compile(r"\b(born|birth|birthday|dob|d\.o\.b)\b", re.IGNORECASE)
+_SPACED_DIGITS = re.compile(r"\b\d(?:[ -]\d){3}\b")  # #68: "7 8 2 3"
+_BIRTH_YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 _SSN_WORD = re.compile(r"\b(ssn|social\s+security|last[\s-]*(?:four|4))\b", re.IGNORECASE)
 # How far after an SSN word its digits may sit ("the last four of my SSN are 7823").
 _NEAR = 40
@@ -97,13 +106,18 @@ class Credentials:
         raise TypeError("Credentials cannot be pickled (ADR 0005)")
 
 
-def _to_date(m: re.Match[str]) -> date | None:
+def _to_dates(m: re.Match[str]) -> list[date]:
+    """The dates a match can mean: a two-digit year is tried as 19xx, then 20xx."""
     g = m.groupdict()
     month = _MONTHS[g["mon"].lower()] if g.get("mon") else int(g["m"])
-    try:
-        return date(int(g["y"]), month, int(g["d"]))
-    except ValueError:
-        return None
+    years = [1900 + int(g["yy"]), 2000 + int(g["yy"])] if g.get("yy") else [int(g["y"])]
+    out = []
+    for year in years:
+        try:
+            out.append(date(year, month, int(g["d"])))
+        except ValueError:
+            continue
+    return out
 
 
 def _plausible_birth_date(d: date, as_of: date) -> bool:
@@ -131,10 +145,10 @@ def capture(text: str, as_of: date, challenge_open: bool = False) -> tuple[str, 
     bare: list[str] = []  # other four-digit groups in credential context
 
     def a_date(m: re.Match[str]) -> str:
-        found = _to_date(m)
-        if found is None or not _plausible_birth_date(found, as_of):
+        plausible = [d for d in _to_dates(m) if _plausible_birth_date(d, as_of)]
+        if not plausible:
             return m.group(0)
-        dobs.append(found)
+        dobs.append(plausible[0])
         return DOB_MASK
 
     def full_ssn(m: re.Match[str]) -> str:
@@ -143,6 +157,7 @@ def capture(text: str, as_of: date, challenge_open: bool = False) -> tuple[str, 
 
     masked = text
     has_ssn_word = bool(_SSN_WORD.search(text))
+    masked = _SEPARATED_SSN.sub(full_ssn, masked)
     if has_ssn_word:
         masked = _FULL_SSN.sub(full_ssn, masked)
     for pattern in _DATE_PATTERNS:
@@ -159,14 +174,29 @@ def capture(text: str, as_of: date, challenge_open: bool = False) -> tuple[str, 
     if challenge_open or dobs or (has_ssn_word and not near):
         masked = _mask_bare_groups(masked, bare)
 
+    if _BIRTH_WORD.search(text):  # #68: a birth year on its own is still part of a DOB
+        masked = _BIRTH_YEAR.sub(lambda m: DOB_MASK if _not_money(masked, m) else m[0], masked)
+
     if not dobs and not near and not bare:
-        return text, None
+        return masked, None
     if near:
         last4 = _one(near)
     else:
         not_years = [g for g in bare if not _YEARLIKE.match(g)]
         last4 = _one(not_years or bare)
     return masked, Credentials(dob=_one_date(dobs), last4=last4)
+
+
+def _not_money(text: str, m: re.Match[str]) -> bool:
+    before, after = text[max(0, m.start() - 2) : m.start()], text[m.end() : m.end() + 8]
+    return not (_MONEY.search(before) or _MONEY.search(after))
+
+
+def _first_digits(window: str) -> re.Match[str] | None:
+    """The earliest digit run in the window, whatever its form (#68: spaced digits too)."""
+    hits = [p.search(window) for p in (_SPELLED_RUN, _SPACED_DIGITS, _FOUR_DIGITS)]
+    found = [h for h in hits if h is not None]
+    return min(found, key=lambda h: h.start()) if found else None
 
 
 def _one_date(dobs: list[date]) -> date | None:
@@ -186,7 +216,7 @@ def _mask_near_ssn_words(text: str, found: list[str]) -> str:
             continue
         window_end = min(word.end() + _NEAR, len(text))
         window = text[word.end() : window_end]
-        hit = _SPELLED_RUN.search(window) or _FOUR_DIGITS.search(window)
+        hit = _first_digits(window)
         if hit is None:
             continue
         found.append(_digits_of(hit.group(0)))
@@ -199,8 +229,7 @@ def _mask_near_ssn_words(text: str, found: list[str]) -> str:
 
 def _mask_bare_groups(text: str, found: list[str]) -> str:
     def digits(m: re.Match[str]) -> str:
-        before, after = text[max(0, m.start() - 2) : m.start()], text[m.end() : m.end() + 8]
-        if _MONEY.search(before) or _MONEY.search(after):
+        if not _not_money(text, m):
             return m.group(0)  # an amount, not an identifier
         found.append(m.group(0))
         return SSN4_MASK
@@ -210,6 +239,7 @@ def _mask_bare_groups(text: str, found: list[str]) -> str:
         return SSN4_MASK
 
     text = _SPELLED_RUN.sub(spelled, text)
+    text = _SPACED_DIGITS.sub(spelled, text)
     return _FOUR_DIGITS.sub(digits, text)
 
 

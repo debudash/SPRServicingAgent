@@ -70,7 +70,9 @@ def test_text_without_credentials_is_unchanged(text: str) -> None:
 
 def test_an_impossible_date_is_not_a_dob() -> None:
     out, creds = capture("dob 1958-02-30", AS_OF)
-    assert creds is None and out == "dob 1958-02-30"
+    # Not a candidate. Since #68 the year beside a birth word is masked as part of a DOB, so the
+    # text is no longer returned unchanged (stricter than the original "unchanged" assertion).
+    assert creds is None and out == "dob [DOB]-02-30"
 
 
 def test_credentials_never_print_their_values() -> None:
@@ -191,3 +193,30 @@ def test_issue_67_runner_masks_credentials_split_across_turns() -> None:
     seen_by_model = " ".join(str(m.content) for call in concierge.calls for m in call)
     for leaked in ("7823", "1958-03-14"):
         assert leaked not in dumped and leaked not in seen_by_model
+
+
+# ---------- #68: common credential forms were not captured and reached the model raw ----------
+# Found by /code-review on PR #64 (both axes).
+@pytest.mark.parametrize(
+    ("text", "dob", "last4", "gone"),
+    [
+        ("DOB 3/14/58, last four 7823", DOB, "7823", ["3/14/58", "7823"]),
+        ("born 14.03.1958, ssn ends 7823", DOB, "7823", ["14.03", "1958", "7823"]),
+        ("dob 19580314 and ssn 7823", DOB, "7823", ["19580314", "7823"]),
+        ("dob: 1958/03/14 ssn 7823", DOB, "7823", ["1958/03/14", "7823"]),
+        ("123-45-7823 and 1958-03-14", DOB, "7823", ["123-45", "7823"]),  # no keyword
+        ("last four 7 8 2 3, born 1958-03-14", DOB, "7823", ["7 8 2 3"]),
+    ],
+)
+def test_issue_68_common_forms_are_captured(
+    text: str, dob: date, last4: str, gone: list[str]
+) -> None:
+    out, creds = capture(text, AS_OF)
+    assert creds is not None and (creds.dob, creds.last4) == (dob, last4)
+    for fragment in gone:
+        assert fragment not in out
+
+
+def test_issue_68_a_birth_year_alone_is_masked() -> None:
+    out, creds = capture("I was born on the fourteenth of March, 1958", AS_OF)
+    assert "1958" not in out and creds is None  # masked, but not a usable candidate
