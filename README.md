@@ -30,7 +30,7 @@ a branch, a PR and a set of gates, whether a person or an agent wrote it.
 python -m venv .venv && source .venv/bin/activate   # Windows: .\.venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
 make check                        # lint, types, tests: the same as CI
-docker compose run --rm checks    # the same, inside the container
+docker compose run --build --rm checks    # the same, inside the container
 ```
 
 ## How the build runs

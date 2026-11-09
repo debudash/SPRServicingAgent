@@ -1,6 +1,22 @@
-# Local stack. Today: `docker compose run --rm checks` runs the same checks as CI, inside the container.
-# Later: the desk UI and the human review queue join as services here (check `docker ps` for port clashes).
+# Local stack (ARCHITECTURE.md section 5).
+#   docker compose up desk            the desk: chat UI (B1) and reviewer queue (B4) at http://localhost:8530
+#   docker compose run --build --rm checks    the same checks as CI, inside the container
+# Host port 8530 avoids the other local stacks (8300-8320, 5984, 4444, 8501).
 services:
+  desk:
+    build: .
+    command: ["streamlit", "run", "agents/ui/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    ports:
+      - "8530:8501"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DESK_VAR_DIR: /app/var
+    volumes:
+      - ./var:/app/var                # desk.db, checkpoints.db, chroma/
+      - ./var/cache:/root/.cache      # the embedding model, downloaded once (ADR 0006)
+
   checks:
     build: .
     command: make check
