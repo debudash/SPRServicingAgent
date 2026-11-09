@@ -1,0 +1,56 @@
+"""Checks on the integrator-owned knowledge documents (knowledge/README.md)."""
+
+from datetime import date
+from pathlib import Path
+from typing import Any
+
+import pytest
+import yaml
+
+ROOT = Path(__file__).resolve().parents[2]
+KNOWLEDGE = ROOT / "knowledge"
+STARTER = ROOT / "problemstmt" / "spr_starter_kit" / "knowledge_base"
+DOCS = sorted(p for p in KNOWLEDGE.glob("*.md") if p.name != "README.md")
+REQUIRED = {"doc_id", "version", "effective_date", "synthetic", "source"}
+
+
+def _split(path: Path) -> tuple[dict[str, Any], str]:
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("---\n"), f"{path.name} has no front matter"
+    _, front, body = text.split("---\n", 2)
+    meta: dict[str, Any] = yaml.safe_load(front)
+    return meta, body.removeprefix("\n")
+
+
+@pytest.mark.parametrize("path", DOCS, ids=[p.stem for p in DOCS])
+def test_front_matter(path: Path) -> None:
+    meta, body = _split(path)
+    assert REQUIRED <= set(meta), f"missing: {REQUIRED - set(meta)}"
+    assert meta["doc_id"] == path.stem
+    assert isinstance(meta["version"], int) and meta["version"] >= 1
+    assert isinstance(meta["effective_date"], date)
+    assert isinstance(meta["synthetic"], bool)
+    assert body.strip()
+
+
+def test_starter_documents_are_unchanged_below_the_front_matter() -> None:
+    for source in STARTER.glob("*.md"):
+        meta, body = _split(KNOWLEDGE / source.name)
+        assert meta["synthetic"] is False
+        assert body == source.read_text(encoding="utf-8"), source.name
+
+
+def test_every_document_not_from_the_starter_kit_is_marked_synthetic() -> None:
+    starter = {p.name for p in STARTER.glob("*.md")}
+    for path in DOCS:
+        if path.name not in starter:
+            assert _split(path)[0]["synthetic"] is True, path.name
+
+
+def test_the_new_policies_restate_the_owner_decisions() -> None:
+    large = (KNOWLEDGE / "large_withdrawal_policy.md").read_text(encoding="utf-8")
+    assert "$25,000" in large and "50% of the current account balance" in large  # D-02
+    vulnerable = (KNOWLEDGE / "vulnerable_customer_policy.md").read_text(encoding="utf-8")
+    assert "aged 80 or over" in vulnerable  # D-07
+    waiver = (KNOWLEDGE / "waiver_review_procedure.md").read_text(encoding="utf-8")
+    assert "does not have a general hardship waiver" in waiver  # D-03, matches faq.md

@@ -11,7 +11,7 @@ Before posting:
 - SPR lanes: lane:data, lane:agents, lane:quality.
 - Not night-safe: anything on the money path (identity, quotes, execution, approvals) or that needs a design call.
 - Do not assign anyone and do not add the "human" label.
-- Not for: .github/, CLAUDE.md, contracts/, evals/golden/ or baseline/ changes, product decisions,
+- Not for: .github/, CLAUDE.md, contracts/, evals/golden/, baseline/ or knowledge/ changes, product decisions,
   API keys or accounts. File those with the "human" label instead.
 -->
 
