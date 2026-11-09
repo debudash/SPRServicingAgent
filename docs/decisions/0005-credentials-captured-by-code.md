@@ -33,3 +33,8 @@ GR-09 and FR-23, whatever the tool does with the values afterwards.
   trace all see restricted values.
 - **A separate verification form only.** Cleaner, but customers type credentials into chat anyway, so the
   chat path needs the extractor regardless. A form can be added to the UI later as a convenience.
+
+## Implementation note (B2, issue #56)
+"`intake` extracts" is implemented one step earlier, at the runner's entry: the runner owns the transcript,
+and the raw turn must not enter the graph state at all, since the state is what a checkpoint stores. The
+decision is unchanged; only the place where the code sits moved. See ARCHITECTURE section 3.2.

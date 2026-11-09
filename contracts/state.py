@@ -4,6 +4,7 @@ turn closed (FR-19).
 """
 
 from datetime import date
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -55,6 +56,24 @@ class Session(_State):
         return self
 
 
+class GateResult(StrEnum):
+    """What identity_gate decided this turn (ARCHITECTURE 3.2; 0.3.0). The runner clears it at
+    the start of every turn, so it never carries one turn's decision into the next."""
+
+    NO_CUSTOMER = "no_customer"  # anonymous session: account actions need a bound customer
+    UNTRUSTED = "untrusted"  # Gate A fails: refuse with the contact number, never ask (GR-14)
+    LOCKED = "locked"  # locked on an earlier turn (D-08)
+    ASK = "ask"  # trusted, not yet verified, no usable credentials this turn: not counted
+    FAILED = "failed"  # credentials did not match; attempts remain
+    LOCKED_NOW = "locked_now"  # this turn's failure was the third: lock and open a case
+    PASSED = "passed"  # Gate B passed this turn
+    VERIFIED = "verified"  # Gate B passed on an earlier turn
+
+
+_GATE_NEEDS_GATE_B = {GateResult.PASSED, GateResult.VERIFIED}
+_GATE_NEEDS_LOCK = {GateResult.LOCKED, GateResult.LOCKED_NOW}
+
+
 class Budgets(_State):
     hops: int = Field(default=0, ge=0)
     tool_calls: int = Field(default=0, ge=0)
@@ -99,6 +118,7 @@ class ConversationState(_State):
     trace: list[TraceEvent] = Field(default_factory=list)
 
     intent: Intent | None = None
+    gate: GateResult | None = None
     account_view: AccountView | None = None
     knowledge_answer: KnowledgeAnswer | None = None
     proposal: Proposal | None = None
@@ -110,6 +130,24 @@ class ConversationState(_State):
     execution: Execution | None = None
     case_packet: CasePacket | None = None
     reply: Reply | None = None
+
+    @model_validator(mode="after")
+    def _gates_hold(self) -> "ConversationState":
+        # Issue #56: FR-02 and NG-05 as a property of the state, not only of the graph's routing.
+        # An account view exists only when both gates hold, and only for the bound customer.
+        s = self.session
+        if self.account_view is not None:
+            if not (s.gate_a_trusted and s.gate_b_passed):
+                raise ValueError("an account view needs Gate A and Gate B (FR-02)")
+            if self.account_view.customer_id != s.customer_id:
+                raise ValueError("an account view must be the bound customer's (NG-05)")
+        if self.gate in _GATE_NEEDS_GATE_B and not s.gate_b_passed:
+            raise ValueError(f"gate {self.gate} needs Gate B passed in the session")
+        if self.gate in _GATE_NEEDS_LOCK and not s.locked:
+            raise ValueError(f"gate {self.gate} needs a locked session")
+        if self.gate is GateResult.UNTRUSTED and s.gate_a_trusted:
+            raise ValueError("gate untrusted needs Gate A to have failed")
+        return self
 
 
 # One writer per top-level field. `session` is created by intake and then written field by
@@ -127,6 +165,7 @@ FIELD_WRITERS: dict[str, Node] = {
     "transcript": Node.RUNNER,
     "trace": Node.RUNNER,
     "intent": Node.CONCIERGE,
+    "gate": Node.IDENTITY_GATE,
     "account_view": Node.ACCOUNT,
     "knowledge_answer": Node.KNOWLEDGE,
     "proposal": Node.TRANSACTION,
