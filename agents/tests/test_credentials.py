@@ -90,9 +90,10 @@ def test_scrub_is_the_masked_text() -> None:
 # ---------- the runner captures before the transcript, models and trace ----------
 def test_runner_masks_the_turn_before_anything_sees_it() -> None:
     concierge = ScriptedChatModel([Intent(kind=IntentKind.VERIFY)])
+    audit = MemoryAudit()
     runner = GraphDeskRunner(
         search=FakeSearch([]),
-        audit=MemoryAudit(),
+        audit=audit,
         models={Role.CONCIERGE: concierge, Role.KNOWLEDGE: ScriptedChatModel()},
         clock=lambda: date(2024, 12, 1),
     )
@@ -100,12 +101,20 @@ def test_runner_masks_the_turn_before_anything_sees_it() -> None:
     result = runner.send(conv, "My date of birth is 1958-03-14 and the last four are 7823.")
 
     state = runner._states[conv]
-    dumped = state.model_dump_json()
     seen_by_model = " ".join(str(m.content) for call in concierge.calls for m in call)
-    for leaked in ("7823", "1958-03-14"):
-        assert leaked not in dumped
-        assert leaked not in seen_by_model
-        assert leaked not in result.model_dump_json()
+    # Every place the issue names: state (incl. transcript and trace), model inputs, the turn's
+    # result and the audit rows (review on PR #64: the trace and audit were not checked).
+    places = {
+        "state": state.model_dump_json(),
+        "trace": " ".join(e.model_dump_json() for e in state.trace),
+        "model": seen_by_model,
+        "result": result.model_dump_json(),
+        "audit": " ".join(r.model_dump_json() for r in audit.rows),
+    }
+    assert audit.rows and state.trace
+    for where, text in places.items():
+        for leaked in ("7823", "1958-03-14"):
+            assert leaked not in text, where
     assert DOB_MASK in state.transcript[0].text
 
 
