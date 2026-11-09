@@ -1,5 +1,6 @@
 """Contract tests for the B1 ports (issue #28)."""
 
+import inspect
 import re
 from datetime import date
 from pathlib import Path
@@ -59,10 +60,12 @@ def test_turn_result_carries_what_the_scorer_reads() -> None:
     assert r.usage.cost_micros == 0 and not r.provider_error
 
 
-def test_runner_has_no_way_to_skip_the_identity_challenge() -> None:
-    # Issue #28 design: no start parameter may pre-pass Gate B.
-    params = DeskRunner.start.__code__.co_varnames[: DeskRunner.start.__code__.co_argcount]
-    assert params == ("self", "customer_id")
+def test_issue_30_runner_has_no_way_to_skip_the_identity_challenge() -> None:
+    # Issue #30 (found by /code-review on PR #29): the old check read positional arguments only,
+    # so a keyword-only `gate_b_passed` or a `**kwargs` back door would have passed.
+    params = inspect.signature(DeskRunner.start).parameters
+    assert list(params) == ["self", "customer_id"]
+    assert all(p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD for p in params.values())
 
 
 # Static conformance: mypy checks these fakes against the Protocols.
