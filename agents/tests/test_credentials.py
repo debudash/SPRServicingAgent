@@ -13,6 +13,7 @@ from contracts.tools import Role
 from .test_graph import FakeSearch, MemoryAudit
 
 DOB = date(1958, 3, 14)
+AS_OF = date(2024, 12, 1)
 
 
 @pytest.mark.parametrize(
@@ -44,7 +45,7 @@ DOB = date(1958, 3, 14)
 def test_capture_finds_and_masks_credentials(
     text: str, dob: date | None, last4: str | None, masked: str | None
 ) -> None:
-    out, creds = capture(text)
+    out, creds = capture(text, AS_OF)
     assert creds is not None
     assert creds.dob == dob
     assert creds.last4 == last4
@@ -64,11 +65,11 @@ def test_capture_finds_and_masks_credentials(
     ],
 )
 def test_text_without_credentials_is_unchanged(text: str) -> None:
-    assert capture(text) == (text, None)
+    assert capture(text, AS_OF) == (text, None)
 
 
 def test_an_impossible_date_is_not_a_dob() -> None:
-    out, creds = capture("dob 1958-02-30")
+    out, creds = capture("dob 1958-02-30", AS_OF)
     assert creds is None and out == "dob 1958-02-30"
 
 
@@ -81,7 +82,7 @@ def test_credentials_never_print_their_values() -> None:
 
 
 def test_scrub_is_the_masked_text() -> None:
-    assert scrub("ssn 7823, born 1958-03-14") == f"ssn {SSN4_MASK}, born {DOB_MASK}"
+    assert scrub("ssn 7823, born 1958-03-14", AS_OF) == f"ssn {SSN4_MASK}, born {DOB_MASK}"
 
 
 # ---------- the runner captures before the transcript, models and trace ----------
@@ -121,3 +122,45 @@ def test_issue_70_credentials_expose_their_values_only_as_attributes() -> None:
         pickle.dumps(a)
     assert not hasattr(a, "__dict__")
     assert (a.dob, a.last4) == (DOB, "7823")
+
+
+# ---------- #69: ordinary turns were captured and would count as failed challenges ----------
+# Found by /code-review on PR #64 (spec). ADR 0005: a misparse must not count as an attempt.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Can I take out 2000 by 12/31/2026?",  # a future date is not a date of birth
+        "withdraw 5000 dollars, my social worker said I could",  # "social" alone is not SSN
+        "I opened it on 2022-06-01, can I take $2000 out?",  # too recent to be a birth date
+    ],
+)
+def test_issue_69_ordinary_turns_are_not_credentials(text: str) -> None:
+    assert capture(text, AS_OF) == (text, None)
+
+
+def test_issue_69_the_number_next_to_the_ssn_word_wins_and_amounts_stay() -> None:
+    out, creds = capture("My last four is 7823 and I want 4000 out", AS_OF)
+    assert creds is not None and creds.last4 == "7823"
+    assert out == f"My last four is {SSN4_MASK} and I want 4000 out"
+
+
+def test_issue_69_a_year_is_not_taken_for_the_last_four() -> None:
+    out, creds = capture("ssn ends 7823, I was born in 1958", AS_OF)
+    assert creds is not None and creds.last4 == "7823"
+
+
+@pytest.mark.parametrize(
+    ("text", "dob", "last4"),
+    [
+        ("1958-03-14 or wait, 1958-03-15. Last four 7823", None, "7823"),  # two dates
+        ("1958-03-14 and 7823, or maybe 7832", DOB, None),  # two bare groups
+    ],
+)
+def test_issue_69_ambiguous_candidates_yield_none(
+    text: str, dob: date | None, last4: str | None
+) -> None:
+    out, creds = capture(text, AS_OF)
+    assert creds is not None and (creds.dob, creds.last4) == (dob, last4)
+    assert not creds.complete  # asked again, not counted
+    for digits in ("7823", "7832", "1958"):
+        assert digits not in out
