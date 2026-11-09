@@ -54,3 +54,15 @@ def test_the_new_policies_restate_the_owner_decisions() -> None:
     assert "aged 80 or over" in vulnerable  # D-07
     waiver = (KNOWLEDGE / "waiver_review_procedure.md").read_text(encoding="utf-8")
     assert "does not have a general hardship waiver" in waiver  # D-03, matches faq.md
+
+
+# ---------- #24: the large-withdrawal policy contradicted FR-07 ----------
+# Found by /code-review on PR #20 (spec axis). FR-07: a quote on a non-active account is refused
+# (NOT_PERMITTED); it is not a request for a reviewer (NEEDS_HUMAN).
+def test_issue_24_inactive_accounts_are_refused_not_reviewed() -> None:
+    text = (KNOWLEDGE / "large_withdrawal_policy.md").read_text(encoding="utf-8")
+    review_section = text.split("### Which withdrawals are reviewed by a person", 1)[1]
+    review_section = review_section.split("###", 1)[0]
+    assert "the account status" not in review_section.lower()
+    assert "**active**" not in review_section
+    assert "cannot be processed" in text and "not active" in text

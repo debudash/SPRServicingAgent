@@ -157,6 +157,8 @@ class Confirmation(Message):
 class RuleFlag(StrEnum):
     OVER_AMOUNT = "over_amount"  # gross over $25,000 (D-02)
     OVER_SHARE = "over_share"  # gross over 50% of balance (D-02)
+    # A non-active account is refused at quote time (FR-07, NOT_PERMITTED); this flag only
+    # catches a status change between the quote and execution (issue #24).
     NOT_ACTIVE = "not_active"
     WAIVER_REQUEST = "waiver_request"
     FULL_SURRENDER = "full_surrender"

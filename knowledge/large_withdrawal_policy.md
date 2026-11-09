@@ -18,11 +18,14 @@ A servicing reviewer decides any withdrawal request that meets one or more of th
 - The gross withdrawal amount is more than **$25,000**.
 - The gross withdrawal amount is more than **50% of the current account balance**.
 - The request is for a **full withdrawal** (surrender) of the account.
-- The account status is anything other than **active**.
 - The customer asks for a **surrender charge waiver** for any reason.
 - The customer asks about a **Required Minimum Distribution**, since qualified-account status must be confirmed from the account's records.
 
 All other withdrawal requests from a verified account holder may be completed through self-service once the customer has seen the withdrawal amount and applicable charges and has explicitly confirmed them.
+
+### Accounts that are not active
+
+A withdrawal cannot be processed through the desk when the account status is not active (for example, a frozen account or the account of a deceased holder). The customer is told that the request cannot be processed here and how to contact SPR Financials. This is a refusal, not a request for review.
 
 ### What the customer is told
 
