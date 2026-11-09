@@ -39,7 +39,7 @@ def seed_starter_kit(conn: sqlite3.Connection, path: Path = STARTER_KIT) -> int:
         conn.execute("BEGIN")  # one account at a time: all its rows, or none
         try:
             _insert_account(conn, identity, a)
-        except Exception:
+        except BaseException:  # as in audit.py: an interrupt must not leave it open
             conn.execute("ROLLBACK")
             raise
         conn.execute("COMMIT")

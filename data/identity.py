@@ -10,16 +10,7 @@ import sqlite3
 from datetime import date
 
 from contracts.messages import AgeBand
-
-
-def _add_years(d: date, years: int, months: int = 0) -> date:
-    total = d.month - 1 + months
-    year, month = d.year + years + total // 12, total % 12 + 1
-    try:
-        return d.replace(year=year, month=month)
-    except ValueError:  # day 29-31 missing in that month: use the 1st of the next (the later,
-        # more cautious line: the IRS notice shows for one more day)
-        return date(year, month + 1, 1) if month < 12 else date(year + 1, 1, 1)
+from data.clock import add_months
 
 
 def parse_dob(customer_id: str, raw: str) -> date:
@@ -47,12 +38,13 @@ class SqliteIdentityCheck:
 
     def check_challenge(self, customer_id: str, dob: date, last4: str) -> bool:
         """Gate B. Both values are compared in constant time, and both always are."""
-        stored = self._stored(customer_id)
-        if stored is None:
-            return False
+        # An unknown customer is compared against a placeholder that matches nothing, so the
+        # timing does not say whether the customer exists (review on PR #63).
+        row = self._stored(customer_id)
+        stored = row or ("not-a-date", "none")
         dob_ok = hmac.compare_digest(stored[0].encode(), dob.isoformat().encode())
         last4_ok = hmac.compare_digest(stored[1].encode(), last4.encode())
-        return dob_ok and last4_ok
+        return row is not None and dob_ok and last4_ok
 
     def age_band(self, customer_id: str, as_of: date) -> AgeBand:
         """The band at `as_of` (59 and a half, and 80, are the IRS and vulnerability lines)."""
@@ -60,9 +52,9 @@ class SqliteIdentityCheck:
         if stored is None:
             raise KeyError(customer_id)
         dob = parse_dob(customer_id, stored[0])
-        if as_of < _add_years(dob, 59, 6):
+        if as_of < add_months(dob, 59 * 12 + 6):
             return AgeBand.UNDER_59_5
-        if as_of < _add_years(dob, 80):
+        if as_of < add_months(dob, 80 * 12):
             return AgeBand.FROM_59_5_TO_79
         return AgeBand.EIGHTY_PLUS
 

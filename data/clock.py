@@ -1,5 +1,6 @@
 """The business clock: every date comes from the configured as-of date, never from today."""
 
+import calendar
 from datetime import date
 
 from data.settings import load_settings
@@ -14,11 +15,17 @@ def as_of() -> date:
         raise ValueError(f"DESK_AS_OF must be an ISO date (YYYY-MM-DD), got {raw!r}") from None
 
 
+def add_months(d: date, months: int) -> date:
+    """`d` moved by whole months. A day the target month lacks (29 February in a common year,
+    31 August + 6 months) becomes that month's last day: the one rule for every anniversary,
+    contract years and age lines alike."""
+    total = d.month - 1 + months
+    year, month = d.year + total // 12, total % 12 + 1
+    return date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
+
+
 def _anniversary(start: date, year: int) -> date:
-    try:
-        return start.replace(year=year)
-    except ValueError:  # 29 February start in a non-leap year
-        return date(year, 2, 28)
+    return add_months(start, 12 * (year - start.year))
 
 
 def contract_year(start: date, as_of: date) -> int:

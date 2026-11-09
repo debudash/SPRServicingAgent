@@ -31,6 +31,16 @@ def _stores(conn: sqlite3.Connection) -> tuple[SqliteAccountStore, SqliteIdentit
     return SqliteAccountStore(conn, identity), identity
 
 
+def _withdrawal(conn: sqlite3.Connection, tid: str, year: int, gross: int, as_of: str) -> None:
+    conn.execute(
+        "INSERT INTO transactions (transaction_id, customer_id, proposal_id, contract_year, "
+        "gross_cents, free_cents, excess_cents, charge_cents, net_cents, approved_by, "
+        "executed_as_of, is_synthetic) "
+        "VALUES (?, 'SPR-1001', NULL, ?, ?, ?, 0, 0, ?, 'seed', ?, 1)",
+        (tid, year, gross, gross, gross, as_of),
+    )
+
+
 # ---------- seed ----------
 def test_seed_loads_the_starter_kit_once(conn: sqlite3.Connection) -> None:
     assert seed_starter_kit(conn) == 0  # second run inserts nothing
@@ -106,26 +116,15 @@ def test_account_view_for_spr_1001(conn: sqlite3.Connection) -> None:
 
 
 def test_withdrawals_this_contract_year_reduce_the_allowance(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        "INSERT INTO transactions (transaction_id, customer_id, proposal_id, contract_year, "
-        "gross_cents, free_cents, excess_cents, charge_cents, net_cents, approved_by, "
-        "executed_as_of, is_synthetic) VALUES "
-        "('T1', 'SPR-1001', NULL, 3, 500000, 500000, 0, 0, 500000, 'seed', '2024-07-01', 1), "
-        "('T0', 'SPR-1001', NULL, 2, 900000, 900000, 0, 0, 900000, 'seed', '2023-07-01', 1)"
-    )
+    _withdrawal(conn, "T1", 3, 500_000, "2024-07-01")
+    _withdrawal(conn, "T0", 2, 900_000, "2023-07-01")
     view = SqliteAccountStore(conn, SqliteIdentityCheck(conn)).view("SPR-1001", AS_OF)
     assert view.withdrawals_this_year == 1
     assert view.allowance_remaining_cents == 374_506  # last year's withdrawal does not count
 
 
 def test_allowance_never_goes_below_zero(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        "INSERT INTO transactions (transaction_id, customer_id, proposal_id, contract_year, "
-        "gross_cents, free_cents, excess_cents, charge_cents, net_cents, approved_by, "
-        "executed_as_of, is_synthetic) VALUES "
-        "('T1', 'SPR-1001', NULL, 3, 2000000, 874506, 1125494, 67530, 1932470, 'seed', "
-        "'2024-07-01', 1)"
-    )
+    _withdrawal(conn, "T1", 3, 2_000_000, "2024-07-01")
     view = SqliteAccountStore(conn, SqliteIdentityCheck(conn)).view("SPR-1001", AS_OF)
     assert view.allowance_remaining_cents == 0
 
@@ -174,7 +173,8 @@ def test_stores_conform_to_the_ports(conn: sqlite3.Connection) -> None:
     i: IdentityCheck = identity
     c: CaseStore = SqliteCaseStore(conn)
     assert a.gate_a("SPR-1001") and not i.check_challenge("SPR-1001", AS_OF, "0000")
-    assert c is not None
+    c.open(_packet("CASE-9"))
+    assert SqliteCaseStore(conn).get("CASE-9") == _packet("CASE-9")
 
 
 # ---------- the identity table is reachable only through data/identity.py (PG-04) ----------
@@ -199,7 +199,7 @@ def test_only_data_identity_touches_the_identity_table() -> None:
                 continue
             scanned += 1
             assert not _FORBIDDEN.search(path.read_text(encoding="utf-8")), path
-    assert scanned >= 15
+    assert scanned >= 15  # the scan found the lanes' modules, not an empty tree
 
 
 # ---------- #65: a malformed stored DOB was quoted in the exception message ----------
@@ -229,7 +229,9 @@ def test_issue_65_a_malformed_seed_dob_is_not_in_the_error(tmp_path: Path) -> No
     with pytest.raises(ValueError) as info:
         seed_starter_kit(c, kit)
     assert "March 58" not in _chain_text(info.value)
-    assert c.execute("SELECT COUNT(*) FROM accounts WHERE customer_id='SPR-1001'").fetchone() == (0,)
+    assert c.execute("SELECT COUNT(*) FROM accounts WHERE customer_id='SPR-1001'").fetchone() == (
+        0,
+    )
 
 
 # ---------- #66: the isolation test let SQL read the dob column ----------
@@ -253,3 +255,21 @@ def test_issue_66_sql_naming_dob_or_joining_identity_is_flagged(source: str) -> 
 )
 def test_issue_66_non_sql_mentions_of_dob_are_allowed(source: str) -> None:
     assert not _FORBIDDEN.search(source)
+
+
+# ---------- one leap-day rule for anniversaries and age lines (review on PR #63) ----------
+@pytest.mark.parametrize(
+    ("start", "months", "expected"),
+    [
+        (date(1960, 2, 29), 12, date(1961, 2, 28)),  # missing day: the month's last day
+        (date(1965, 8, 31), 59 * 12 + 6, date(2025, 2, 28)),
+        (date(1964, 8, 31), 59 * 12 + 6, date(2024, 2, 29)),
+        (date(1958, 3, 14), 59 * 12 + 6, date(2017, 9, 14)),
+    ],
+)
+def test_add_months_uses_the_last_day_for_a_missing_day(
+    start: date, months: int, expected: date
+) -> None:
+    from data.clock import add_months
+
+    assert add_months(start, months) == expected

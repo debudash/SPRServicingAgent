@@ -13,9 +13,10 @@ class SqliteCaseStore:
 
     def open(self, packet: CasePacket) -> None:
         """Insert a new open case. A duplicate `case_id` raises sqlite3.IntegrityError."""
-        reasons = sorted(f.value for f in packet.rule_flags) + [
-            r.model_dump_json() for r in packet.compliance_reasons
-        ]
+        reasons = {
+            "rule_flags": sorted(f.value for f in packet.rule_flags),
+            "compliance_reasons": [r.model_dump(mode="json") for r in packet.compliance_reasons],
+        }
         self._conn.execute(
             "INSERT INTO cases (case_id, conversation_id, customer_id, proposal_id, opened_for, "
             "reasons, packet, opened_at) VALUES (?, ?, ?, NULL, ?, ?, ?, ?)",
@@ -26,6 +27,8 @@ class SqliteCaseStore:
                 packet.opened_for.value,
                 json.dumps(reasons),
                 packet.model_dump_json(),
+                # Wall-clock event time, like the audit log's `at`: when the case was opened,
+                # not a business date (those come from the as-of clock).
                 datetime.now(UTC).isoformat(timespec="seconds"),
             ),
         )
