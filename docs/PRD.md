@@ -1,6 +1,6 @@
 # PRD: SPR Servicing Desk (v2)
 
-Status: draft for review · Owner: integrator · Source brief: `problemstmt/AI_Engineer_Assignment.docx`
+Status: approved 2026-11-09 · Owner: integrator · Source brief: `problemstmt/AI_Engineer_Assignment.docx`
 
 Every item is numbered so tickets, tests and eval cases can cite it (`FR-08`, `NG-01`, `M-03`).
 Targets live **only** in section 7. How each metric is computed is defined in the eval spec, not here.
@@ -40,8 +40,12 @@ date of birth or SSN digits leaking.
 | D-02 | Large-withdrawal threshold: gross amount **over $25,000 or over 50% of the balance** always goes to a human. | Owner decision |
 | D-03 | Surrender-charge waivers follow the knowledge base exactly: **terminal illness (with documentation), death benefit, RMD amounts**. There is no general hardship waiver; nursing-home confinement gets the standard schedule. A waiver is always granted by a human. | Knowledge base (faq.md, fee_schedule.md) |
 | D-04 | The system clock is a configured **as-of date, 2024-12-01**, not today's date. It is the only date at which every starter account's stored contract year matches its start date. | Platform audit (PG-02) |
-| D-05 | Free allowance remaining = 10% × current balance − withdrawals already taken this contract year, floored at 0. | Interpretation of fee_schedule.md ("10% of account balance per contract year"); ADR to follow |
+| D-05 | Free allowance remaining = 10% × current balance − withdrawals already taken this contract year, floored at 0. Matches the fee schedule's formula and example when no earlier withdrawal exists; netting earlier withdrawals stops one large withdrawal being split into many free ones. | Owner decision, interpreting fee_schedule.md |
 | D-06 | Time-saving baselines are stated assumptions (section 1), labelled as such. | Owner decision |
+| D-07 | Vulnerable-customer signals that force a human hold, at any amount: a third party directing the customer; pressure or urgency; age 80+ with a withdrawal above the free allowance; confusion or repeated changes of amount. | Owner decision |
+| D-08 | 3 failed identity challenges lock account actions for the session and open a case. | Owner decision |
+| D-09 | A third party (spouse, child, beneficiary, claimed attorney) gets public product information only and a case so SPR can verify their authority offline. Nothing about the account is shared. | Owner decision |
+| D-10 | Budgets: per customer turn 8 agent hops, 12 tool calls, 30 seconds; per case $0.10 model cost. These are hard stops; the cost target (M-14) is the expected average. | Owner decision |
 
 ## 3. Guarantees the platform will not provide
 
@@ -96,9 +100,10 @@ Each item can be turned into an eval case or unit test that passes or fails with
 - **FR-11** Every proposal is reviewed by the Compliance agent, which returns `approve`, `hold` or `escalate`
   with reasons citing a policy section. Rule checks (threshold, status, waiver request, age, budget) are
   computed in code first, and Compliance cannot approve a proposal those checks flag.
-- **FR-12** Vulnerable-customer signals defined in the vulnerable-customer policy (PG-06), such as a third
-  party directing the conversation, pressure or urgency, or age 80+ with a withdrawal above the free
-  allowance, result in `hold` and a human case.
+- **FR-12** Any vulnerable-customer signal in D-07 results in `hold` and a human case, whatever the amount.
+  The age rule is computed in code; the conversational signals are judged by the Compliance agent and
+  measured by eval recall. The vulnerable-customer policy document (PG-06) states these rules for the
+  knowledge base.
 
 ### Waivers and hardship
 - **FR-13** A terminal-illness waiver request gets the documentation requirements from the knowledge base and
@@ -118,8 +123,8 @@ Each item can be turned into an eval case or unit test that passes or fails with
 ### Coordination
 - **FR-19** Every message between agents validates against a versioned schema. An invalid message is rejected
   and the case fails closed.
-- **FR-20** Each case has budgets for agent hops, tool calls, wall-clock time and model cost. When one runs
-  out, the case escalates and no action is taken.
+- **FR-20** Each case enforces the D-10 budgets (per turn: 8 agent hops, 12 tool calls, 30 seconds; per
+  case: $0.10). When one runs out, the case escalates with code `UNAVAILABLE` and no action is taken.
 - **FR-21** If the Compliance agent or the case queue is unavailable, no withdrawal executes and the customer
   is told what happens next.
 - **FR-22** Each agent can call only the tools registered for its role. Any other call is refused in code
@@ -143,8 +148,8 @@ Each item can be turned into an eval case or unit test that passes or fails with
   as the IRS notice.
 - **NG-03** Never changes beneficiaries, contact details or payout destinations. It explains the process and
   creates a case.
-- **NG-04** Never acts for anyone other than the session's verified owner. A spouse, beneficiary or attorney
-  gets a case, not service.
+- **NG-04** Never acts for anyone other than the session's verified owner. A spouse, child, beneficiary or
+  claimed attorney gets public product information and a case (D-09), never account information.
 - **NG-05** Never discloses or discusses another customer's account.
 - **NG-06** Never answers a product fact from model memory. If the knowledge base has no answer, it says so
   and offers a case.
@@ -193,9 +198,6 @@ Approving everything games containment but breaks M-03 and M-10.
 ## 8. Open items
 
 - **O-01** Baselines M-11 and M-12 are assumptions (D-06). A real pilot would measure them.
-- **O-02** D-05 matches the fee schedule's formula and worked example (`Free = Account Balance × 10%`) when
-  no withdrawal has been taken this contract year. Subtracting earlier withdrawals is our reading of "per
-  contract year", since the knowledge base is silent on repeat withdrawals. Record it in an ADR.
-- **O-03** Budget values for FR-20 (hops, tool calls, seconds, dollars) are set in the blueprint.
-- **O-04** The vulnerable-customer signals in FR-12 depend on the policy document PG-06 asks for, which has
-  not been written yet.
+- **O-02** Write the vulnerable-customer and large-withdrawal policy documents (PG-06) from D-02 and D-07,
+  labelled as synthetic SPR operations policy.
+- Resolved: allowance basis (D-05), budgets (D-10), vulnerable-customer signals (D-07).
