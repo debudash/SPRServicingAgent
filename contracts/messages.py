@@ -120,7 +120,11 @@ class Quote(Message):
 
 
 def proposal_hash(customer_id: str, quote: Quote, as_of: date) -> str:
-    """SHA-256 over everything an approval vouches for. Any change voids the approval (GR-18)."""
+    """SHA-256 over everything an approval vouches for. Any change voids the approval (GR-18).
+
+    It includes CONTRACTS_VERSION on purpose: an approval made under one contract version is not
+    valid under another, so a contracts release voids approvals that were outstanding.
+    """
     body = {
         "contracts_version": CONTRACTS_VERSION,
         "customer_id": customer_id,
@@ -255,7 +259,8 @@ class Execution(Message):
 
 # ---------- Cases and replies ----------
 class CasePacket(Message):
-    """FR-16. Scrubbed before it is written; never holds restricted fields."""
+    """FR-16. No field is a restricted field (tested). The free-text fields (`request_summary`,
+    `excerpt`) rely on the scrubber (FR-23, ADR 0005) before the packet is built."""
 
     case_id: str
     conversation_id: str

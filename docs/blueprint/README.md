@@ -81,26 +81,29 @@ The starting models are confirmed or changed by the model-per-role evals (ADR 00
 
 ## 4. Conversation state (single writer per field)
 
-Typed in `contracts/state.py`. Every field has exactly one writer node; a write from any other node is a
-contract violation and fails the case closed (FR-19).
+Typed in `contracts/state.py` (`FIELD_WRITERS`, `SESSION_FIELD_WRITERS`, `check_write`). Every field
+has exactly one writer; a write from any other node is a contract violation and fails the turn closed
+(FR-19).
 
 | Field | Writer | Notes |
 |---|---|---|
-| `conversation_id`, `session`, `as_of`, `switches`, `budgets` | `intake` (budgets updated by the runner) | `session` holds Gate A, never DOB or SSN. `intake` also extracts credential-shaped text from the raw turn for `identity_gate` and masks it before any model sees the turn |
-| `session.gate_b`, `failed_attempts`, `locked` | `identity_gate` | |
+| `conversation_id`, `as_of`, `switches`, `versions` | `intake` | `versions`: model, prompt and policy-document versions, copied into every audit row |
+| `session` | `intake` creates it; then field by field | Never replaced whole after creation (issue #23). Holds Gate A, never DOB or SSN. `intake` also extracts credential-shaped text for `identity_gate` and masks the turn before any model sees it (ADR 0005) |
+| `session.customer_id`, `session.gate_a_trusted` | `intake` | |
+| `session.gate_b_passed`, `failed_attempts`, `locked` | `identity_gate` | The third failure locks (D-08) |
+| `turn`, `budgets`, `transcript`, `trace` | runner | Budgets are reset per turn and counted by the runner; the transcript holds scrubbed text only |
 | `intent` | `concierge` | Intent, amount, explicit-yes flag |
 | `account_view` | `account` | Balance, contract year, age band, allowance remaining. No restricted fields |
 | `knowledge_answer` | `knowledge` | Answer text plus citations (`doc_id`, `version`, `section`) |
-| `quote`, `proposal` | `transaction` | `proposal.hash` covers customer, amount and every quote figure |
+| `proposal` (with its `quote`) | `transaction` | `proposal.hash` covers customer, amount, every quote figure, as-of date and contracts version |
 | `confirmation` | `confirm` | Amount and turn number of the explicit yes |
 | `rule_flags` | `rules` | |
-| `compliance` | `compliance` | Decision and reasons |
-| `approval_token` | approval edge | HMAC over `proposal.hash`, single use |
-| `human_decision` | `human_review` | Reviewer, decision, time |
-| `execution` | `execute` | Transaction ID, idempotency key |
-| `case_ref`, `case_packet` | `case` | |
-| `reply`, `outcome` | `respond` | One PRD §6 code, or `ANSWERED` / `EXECUTED` |
-| `versions` | `intake` | Model, prompt and policy-document versions, copied into every audit row |
+| `compliance` | `compliance` | Decision, reasons, vulnerable-customer signals |
+| `approval` | approval edge | Token (HMAC over `proposal.hash`) present exactly when the decision is approve; single use |
+| `human_decision` | `human_review` | Reviewer, decision |
+| `execution` | `execute` | Transaction ID; the proposal ID is the idempotency key |
+| `case_packet` | `case` | `case_packet.case_id` is the case reference shown to the customer |
+| `reply` | `respond` | `reply.outcome`: one PRD §6 code, or `ANSWERED` / `EXECUTED` |
 
 ## 5. Data
 
@@ -117,7 +120,8 @@ contract violation and fails the case closed (FR-19).
 - **Scrubber:** one function removes restricted values from any text before it reaches a prompt, a trace,
   a log or a case packet. Unit-tested (EVAL_SPEC §4).
 - **Knowledge documents** live in `knowledge/` (integrator-owned, protected from agent PRs): the three
-  starter documents, the two new policy documents (large-withdrawal and vulnerable-customer, PRD O-02),
+  starter documents, three synthetic SPR operations documents (large withdrawals, vulnerable customers and
+  third parties, the waiver review procedure; PRD O-02),
   and a superseded fee-schedule version for the versioning test (B4).
 - **Embeddings:** local sentence-transformers; Chroma embedded. No network at test time.
 

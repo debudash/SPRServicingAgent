@@ -4,8 +4,9 @@ turn closed (FR-19).
 """
 
 from datetime import date
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from contracts.messages import (
     AccountView,
@@ -44,6 +45,15 @@ class Session(_State):
     failed_attempts: int = Field(default=0, ge=0, le=MAX_FAILED_CHALLENGES)
     locked: bool = False
 
+    @model_validator(mode="after")
+    def _consistent(self) -> "Session":
+        # Review follow-up on PR #20: the type allowed states no flow should produce.
+        if self.failed_attempts >= MAX_FAILED_CHALLENGES and not self.locked:
+            raise ValueError("the third failed challenge locks the session (D-08)")
+        if self.gate_b_passed and (self.customer_id is None or not self.gate_a_trusted):
+            raise ValueError("Gate B can only pass for a bound customer on a trusted account")
+        return self
+
 
 class Budgets(_State):
     hops: int = Field(default=0, ge=0)
@@ -66,7 +76,7 @@ class Versions(_State):
 
 
 class TranscriptEntry(_State):
-    role: str = Field(pattern="^(customer|desk)$")
+    role: Literal["customer", "desk"]
     turn: int = Field(ge=1)
     text: str  # always scrubbed (ADR 0005)
 

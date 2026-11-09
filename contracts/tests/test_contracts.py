@@ -352,3 +352,15 @@ def test_issue_25_quote_refuses_a_wrong_excess() -> None:
             threshold_tier=ThresholdTier.SELF_SERVICE,
             irs_notice=False,
         )
+
+
+# ---------- review follow-up on PR #20: Session cannot hold an impossible state ----------
+def test_session_refuses_impossible_states() -> None:
+    with pytest.raises(ValidationError):
+        Session(customer_id="SPR-1001", gate_a_trusted=True, failed_attempts=3, locked=False)
+    with pytest.raises(ValidationError):
+        Session(customer_id=None, gate_b_passed=True)
+    with pytest.raises(ValidationError):
+        Session(customer_id="SPR-1002", gate_a_trusted=False, gate_b_passed=True)
+    Session(customer_id="SPR-1001", gate_a_trusted=True, failed_attempts=3, locked=True)
+    Session(customer_id="SPR-1001", gate_a_trusted=True, gate_b_passed=True)
