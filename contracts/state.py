@@ -102,8 +102,10 @@ class ConversationState(_State):
     reply: Reply | None = None
 
 
-# One writer per top-level field. `session` is split: intake binds the customer and Gate A,
-# identity_gate owns the challenge fields (see SESSION_FIELD_WRITERS).
+# One writer per top-level field. `session` is created by intake and then written field by
+# field: intake binds the customer and Gate A, identity_gate owns the challenge fields (see
+# SESSION_FIELD_WRITERS). `transcript` and `trace` are lists only the runner appends to; an
+# append does not pass through check_write, so the runner is the one place they change.
 FIELD_WRITERS: dict[str, Node] = {
     "conversation_id": Node.INTAKE,
     "as_of": Node.INTAKE,
@@ -143,6 +145,11 @@ class ContractViolation(Exception):
 
 def check_write(node: Node, field: str) -> None:
     """Raise ContractViolation unless `node` owns `field` (`session.<name>` for session fields)."""
+    # Issue #23 (found by /code-review on PR #20): FIELD_WRITERS lets intake create the session,
+    # and allowing it to replace the whole object would reset gate_b_passed, failed_attempts and
+    # locked, which only identity_gate owns. After creation the session is written field by field.
+    if field == "session":
+        raise ContractViolation("write the session field by field: 'session.<field>'")
     if field.startswith("session."):
         owner = SESSION_FIELD_WRITERS.get(field.removeprefix("session."))
     else:

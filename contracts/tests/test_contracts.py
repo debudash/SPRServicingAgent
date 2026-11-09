@@ -299,3 +299,21 @@ def test_issue_22_quote_refuses_a_wrong_charge(charge_cents: int) -> None:
 
 def test_issue_22_quote_accepts_the_half_up_charge() -> None:
     Quote.model_validate(_g_b3_01(67_530))
+
+
+# ---------- #23: intake could overwrite identity-gate-owned session fields ----------
+# Found by /code-review on PR #20 (standards axis). Replacing the whole Session would reset
+# gate_b_passed, failed_attempts and locked, which only identity_gate may write (D-08).
+@pytest.mark.parametrize("node", list(Node))
+def test_issue_23_no_node_may_replace_the_whole_session(node: Node) -> None:
+    with pytest.raises(ContractViolation):
+        check_write(node, "session")
+
+
+def test_issue_23_session_fields_keep_their_owners() -> None:
+    check_write(Node.INTAKE, "session.customer_id")
+    check_write(Node.INTAKE, "session.gate_a_trusted")
+    for field in ("gate_b_passed", "failed_attempts", "locked"):
+        check_write(Node.IDENTITY_GATE, f"session.{field}")
+        with pytest.raises(ContractViolation):
+            check_write(Node.INTAKE, f"session.{field}")
