@@ -34,6 +34,8 @@ class IntentKind(StrEnum):
     THIRD_PARTY = "third_party"
     CHANGE_DETAILS = "change_details"
     VERIFY = "verify"
+    OTHER_ACCOUNT = "other_account"  # NG-05: about an account not bound to this session (0.3.0)
+    RESTRICTED_INFO = "restricted_info"  # NG-08: asks the desk to disclose identity data (0.3.0)
     OUT_OF_SCOPE = "out_of_scope"
     OTHER = "other"
 
@@ -258,6 +260,13 @@ class Execution(Message):
 
 
 # ---------- Cases and replies ----------
+class CaseReason(StrEnum):
+    """Why a case was opened (0.3.0). New bullets add reasons; none is ever removed."""
+
+    LOCKED = "locked"  # third failed identity challenge (D-08, FR-04)
+    THIRD_PARTY = "third_party"  # someone acting for the customer (D-09)
+
+
 class CasePacket(Message):
     """FR-16. No field is a restricted field (tested). The free-text fields (`request_summary`,
     `excerpt`) rely on the scrubber (FR-23, ADR 0005) before the packet is built."""
@@ -265,6 +274,7 @@ class CasePacket(Message):
     case_id: str
     conversation_id: str
     customer_id: str | None
+    opened_for: CaseReason
     request_summary: str
     quote: Quote | None
     rule_flags: frozenset[RuleFlag] = frozenset()

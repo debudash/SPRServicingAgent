@@ -1,4 +1,4 @@
-"""The interfaces where lanes meet (contracts 0.2.0, issue #28).
+"""The interfaces where lanes meet (contracts 0.2.0, issue #28; B2 ports 0.3.0, issue #56).
 
 Each lane implements or calls these Protocols and never imports another lane's modules:
 
@@ -7,6 +7,9 @@ Each lane implements or calls these Protocols and never imports another lane's m
 | `KnowledgeSearch` | data (`data/knowledge_index/`) | agents (the Knowledge node) |
 | `AuditLog` | data (`data/store/`) | agents (every deciding node) |
 | `DeskRunner` | agents (`agents/graph.py`) | quality (`evals/run.py`), the UI |
+| `AccountStore` | data (`data/store/`) | agents (`intake`, the account node) |
+| `IdentityCheck` | data (`data/identity.py`) | agents (`identity_gate`) |
+| `CaseStore` | data (`data/store/`) | agents (the case node) |
 """
 
 from datetime import date
@@ -15,7 +18,7 @@ from typing import Protocol
 
 from pydantic import AwareDatetime, Field, JsonValue
 
-from contracts.messages import Citation, Message
+from contracts.messages import AccountView, CasePacket, Citation, Message
 from contracts.outcomes import Outcome
 from contracts.tools import Node, Step
 
@@ -105,6 +108,43 @@ class AuditLog(Protocol):
 
     def verify_chain(self) -> bool:
         """True if no row has been edited, removed or reordered."""
+        ...
+
+
+# ---------- accounts, identity and cases (FR-02, FR-03, FR-04, PG-04) ----------
+class AccountStore(Protocol):
+    def gate_a(self, customer_id: str) -> bool:
+        """Gate A: the account is trusted out of band (the starter kit's `identity_verified`).
+
+        False for an unknown customer. The desk never changes it (PG-03).
+        """
+        ...
+
+    def view(self, customer_id: str, as_of: date) -> AccountView:
+        """The model-safe view at `as_of`: no date of birth, no SSN digits (PG-04).
+
+        Raises KeyError for an unknown customer. Callers check both gates first; the state
+        refuses a view without them (FR-02).
+        """
+        ...
+
+
+class IdentityCheck(Protocol):
+    def check_challenge(self, customer_id: str, dob: date, last4: str) -> bool:
+        """Gate B: True only if both candidates match the stored values.
+
+        Stored values never leave this call (PG-04, ADR 0005). False for an unknown customer.
+        """
+        ...
+
+
+class CaseStore(Protocol):
+    def open(self, packet: CasePacket) -> None:
+        """Persist a new case. The caller picks `case_id`; a duplicate ID raises.
+
+        The packet must already be scrubbed (FR-23): a precondition on the caller, checked by the
+        restricted-field property test.
+        """
         ...
 
 

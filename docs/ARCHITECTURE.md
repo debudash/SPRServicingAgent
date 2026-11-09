@@ -134,6 +134,7 @@ which returns a band (`under_59_5`, `59_5_to_79`, `80_plus`), not the date (PG-0
 | `conversation_id` | TEXT FK | I | |
 | `customer_id` | TEXT FK, nullable | I | Null when a third party contacts the desk about someone they do not identify |
 | `proposal_id` | TEXT FK, nullable | I | |
+| `opened_for` | TEXT | I | `CaseReason`: `locked` (D-08), `third_party` (D-09); later bullets add reasons |
 | `reasons` | TEXT (JSON) | I | Rule flags and Compliance reasons |
 | `packet` | TEXT (JSON) | C | FR-16 fields; scrubbed before it is written |
 | `status` | TEXT | I | `open`, `info_requested`, `approved`, `rejected`, `closed` |
@@ -225,6 +226,13 @@ sequenceDiagram
         end
     end
 ```
+
+Where the capture runs: at the runner's entry, before the customer turn is appended to the
+transcript, so the raw text never enters `ConversationState` (and so never reaches a checkpoint).
+The candidates live only in the per-turn context that `identity_gate` reads. A turn with no usable
+candidates asks again and does not count as a failed attempt (ADR 0005). `identity_gate` records its
+decision in the per-turn `gate` field, and the state itself refuses an account view unless both gates
+hold for the bound customer (contracts 0.3.0).
 
 ### 3.3 B3: routine withdrawal
 
