@@ -23,3 +23,7 @@ exclude = ['^baseline/', '^problemstmt/', '^\.github/']
 testpaths = ["contracts", "data", "agents", "evals", "redteam"]
 pythonpath = ["."]
 addopts = "-q --import-mode=importlib"
+
+[[tool.mypy.overrides]]
+module = ["yaml"]
+ignore_missing_imports = true
