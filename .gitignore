@@ -25,3 +25,6 @@ Thumbs.db
 
 # --- Local working files ---
 slides/
+
+# --- Runtime data (desk.db, checkpoints, Chroma index, model cache) ---
+var/

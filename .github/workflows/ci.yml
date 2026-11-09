@@ -36,4 +36,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build and run checks in the container
-        run: docker compose run --rm checks
+        run: docker compose run --build --rm checks

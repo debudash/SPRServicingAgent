@@ -12,7 +12,7 @@ single-agent baseline v2 is compared against. Design lives in `docs/` (blueprint
 Python 3.12. Install with `pip install -r requirements-dev.txt`. Run from the repo root.
 - Before finishing any change: `make check` (ruff lint + format check, mypy strict, pytest). CI runs the same.
 - Format: `make fmt`
-- In Docker (same image CI builds): `docker compose run --rm checks`
+- In Docker (same image CI builds): `docker compose run --build --rm checks`
 - v1 baseline: `cd baseline && python -m scripts.smoke_test`
 
 ## Agent coordination
