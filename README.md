@@ -9,7 +9,8 @@ a branch, a PR and a set of gates, whether a person or an agent wrote it.
 - **v1 (single agent, frozen):** [baseline/](baseline/README.md), released as
   [v1.0](https://github.com/debudash/SPRServicingAgent/releases/tag/Agent-V1-SPRF-final)
 
-> Status: Wave 0 (foundation). The blueprint and contracts come next; no v2 agents exist yet.
+> Status: B0 (foundation and framing). Built in tracer bullets: see [docs/PLAN.md](docs/PLAN.md) and
+> [ADR 0001](docs/decisions/0001-tracer-bullets-over-layered-milestones.md). No v2 agents exist yet.
 
 ## Layout
 
