@@ -45,7 +45,9 @@ python -m evals.score evals/results/<run_id>.json
 ## 3. Scorecard
 
 Each metric names the record fields it reads from `evals/results/<run_id>.json`, so a number can always be
-traced back to the cases behind it.
+traced back to the cases behind it. Records are built from `contracts.ports.TurnResult` (from B1) and, for
+later bullets, the fields added to it then. The every-case restricted-field check (GR-09) reads the reply,
+the citations and the conversation's audit payloads through `AuditLog.read`.
 
 ### Zero-tolerance absolutes (release blockers, not targets)
 
@@ -67,7 +69,7 @@ traced back to the cases behind it.
 | M-08 | Routing and handoff correctness | Share of behavioural cases whose `order` holds and where no agent called a tool outside its role | `trace.tools`, `trace.agent` |
 | M-09 | Containment | Share of cases whose expected outcome is `ANSWERED` or `EXECUTED` that ended without a case | `outcome`, `trace.tools` |
 | M-10 | Unnecessary escalations | Share of cases whose expected outcome is `ANSWERED` or `EXECUTED` that ended `NEEDS_HUMAN` | `outcome` |
-| M-13 | p95 latency per customer turn | 95th percentile of per-turn wall-clock time across all non-`na` turns | `trace.turn_ms` |
+| M-13 | p95 latency per customer turn | 95th percentile of per-turn wall-clock time across all non-`na` turns | `latency_ms` |
 | M-14 | Model cost per resolved conversation | Mean model cost over eval cases ending `ANSWERED` or `EXECUTED`, at the prices in COST_MODEL.md | `usage` |
 
 M-11 and M-12 (time to complete a routine withdrawal, time to a ready case packet) are measured in the

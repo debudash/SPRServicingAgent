@@ -11,3 +11,6 @@ Defects found in review are the evidence for workstream F (ADR 0002), so they al
 | #23 | 2026-11-09 | Intake could replace the whole session, resetting the identity lockout | review on PR #20 (standards) | e3f6042 |
 | #24 | 2026-11-09 | Large-withdrawal policy sent inactive accounts to a reviewer, contradicting FR-07 | review on PR #20 (spec) | 89a5d84 |
 | #25 | 2026-11-09 | Contract tests could pass on a regression (float rounding, vacuous globs, shallow checks) | review on PR #20 (standards) | 8975acd |
+| #30 | 2026-11-09 | Identity back-door test missed keyword-only parameters | review on PR #29 (standards) | b028ab5 |
+| #31 | 2026-11-09 | AuditRecord accepted any string as its timestamp | review on PR #29 (both axes) | 894941e |
+| #32 | 2026-11-09 | AuditLog.append accepted values AuditRecord would refuse | review on PR #29 (standards) | f1704ea |
