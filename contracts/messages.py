@@ -153,18 +153,88 @@ class Proposal(Message):
         return self
 
 
+class QuoteRefusalReason(StrEnum):
+    """FR-07: why a quote was refused (0.5.0)."""
+
+    NOT_POSITIVE = "not_positive"  # the amount is zero or less
+    OVER_BALANCE = "over_balance"  # more than the current balance
+    NOT_ACTIVE = "not_active"  # the account is not active
+
+
+class QuoteRefusal(Message):
+    """FR-07: the quote was refused; the customer is told why (NOT_PERMITTED)."""
+
+    reason: QuoteRefusalReason
+
+
+class ProposalStatus(StrEnum):
+    """A proposal's life (ARCHITECTURE 2.2; 0.5.0)."""
+
+    QUOTED = "quoted"
+    CONFIRMED = "confirmed"
+    APPROVED = "approved"
+    EXECUTED = "executed"
+    VOIDED = "voided"
+    ESCALATED = "escalated"
+
+
+# The only moves a proposal store may make. The yes comes before any approval (GR-17), approval
+# before execution (FR-08); executed and voided are final. An escalated proposal goes to a human
+# (B4), who approves or voids it.
+# Issue #94 (found by /code-review on PR #92): escalation was allowed only after the yes, so a
+# human-tier quote sent to a case before a valid yes (BH-B3-05) stayed confirmable, and the kill
+# switch turned on after approval (FR-26) left a live token that executed once it was off. Any
+# live proposal can now go to a human.
+PROPOSAL_TRANSITIONS: dict[ProposalStatus, frozenset[ProposalStatus]] = {
+    ProposalStatus.QUOTED: frozenset(
+        {ProposalStatus.CONFIRMED, ProposalStatus.ESCALATED, ProposalStatus.VOIDED}
+    ),
+    ProposalStatus.CONFIRMED: frozenset(
+        {ProposalStatus.APPROVED, ProposalStatus.ESCALATED, ProposalStatus.VOIDED}
+    ),
+    ProposalStatus.APPROVED: frozenset(
+        {ProposalStatus.EXECUTED, ProposalStatus.ESCALATED, ProposalStatus.VOIDED}
+    ),
+    ProposalStatus.ESCALATED: frozenset({ProposalStatus.APPROVED, ProposalStatus.VOIDED}),
+    ProposalStatus.EXECUTED: frozenset(),
+    ProposalStatus.VOIDED: frozenset(),
+}
+
+
 class Confirmation(Message):
     proposal_id: str
     amount_cents: Cents = Field(gt=0)
     turn: int = Field(ge=1)
 
 
+def check_transition(before: ProposalStatus, after: ProposalStatus) -> None:
+    """Raise ValueError unless PROPOSAL_TRANSITIONS allows the move. Every ProposalStore calls this
+    (review on PR #92: the rule must be code, not a docstring)."""
+    if after not in PROPOSAL_TRANSITIONS[before]:
+        raise ValueError(f"a proposal cannot move from {before} to {after}")
+
+
+def check_confirmation(
+    proposal: Proposal, confirmation: Confirmation, conversation_id: str
+) -> None:
+    """GR-17 and FR-08: a yes counts only for that proposal, in the conversation that saw the quote,
+    for the quoted amount, on a later turn than the quote. Raise ValueError otherwise."""
+    if confirmation.proposal_id != proposal.proposal_id:
+        raise ValueError("the yes is for a different proposal")
+    if conversation_id != proposal.conversation_id:
+        raise ValueError("the yes came from a different conversation than the quote")
+    if confirmation.amount_cents != proposal.quote.amount_cents:
+        raise ValueError("the yes is for a different amount than the quote (GR-17)")
+    if confirmation.turn <= proposal.quoted_turn:
+        raise ValueError("the yes must come on a later turn than the quote (GR-17)")
+
+
 # ---------- Rules and Compliance ----------
 class RuleFlag(StrEnum):
     OVER_AMOUNT = "over_amount"  # gross over $25,000 (D-02)
     OVER_SHARE = "over_share"  # gross over 50% of balance (D-02)
-    # A non-active account is refused at quote time (FR-07, NOT_PERMITTED); this flag only
-    # catches a status change between the quote and execution (issue #24).
+    # A non-active account is refused at quote time (FR-07, QuoteRefusalReason.NOT_ACTIVE); this
+    # flag only catches a status change between the quote and execution (issue #24).
     NOT_ACTIVE = "not_active"
     WAIVER_REQUEST = "waiver_request"
     FULL_SURRENDER = "full_surrender"
@@ -212,6 +282,16 @@ class ComplianceDecision(Message):
             raise ValueError("a vulnerable-customer signal cannot be approved (FR-12)")
         return self
 
+
+# What each decision does to the proposal (review on PR #92). A hold is a human case (FR-12), so
+# it escalates like an escalate; a human reject voids; request_info leaves it with the human.
+DECISION_MOVES: dict[Decision, ProposalStatus | None] = {
+    Decision.APPROVE: ProposalStatus.APPROVED,
+    Decision.HOLD: ProposalStatus.ESCALATED,
+    Decision.ESCALATE: ProposalStatus.ESCALATED,
+    Decision.REJECT: ProposalStatus.VOIDED,
+    Decision.REQUEST_INFO: None,
+}
 
 COMPLIANCE_DECISIONS = frozenset({Decision.APPROVE, Decision.HOLD, Decision.ESCALATE})
 REVIEWER_DECISIONS = frozenset({Decision.APPROVE, Decision.REJECT, Decision.REQUEST_INFO})

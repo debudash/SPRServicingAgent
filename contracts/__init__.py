@@ -11,4 +11,4 @@ The one exception so far is 0.4.0 (owner decision, issue #80): `CasePacket.custo
 required, a tightening made before any case had been stored.
 """
 
-CONTRACTS_VERSION = "0.4.0"
+CONTRACTS_VERSION = "0.5.0"

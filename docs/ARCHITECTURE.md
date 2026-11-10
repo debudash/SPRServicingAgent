@@ -123,7 +123,7 @@ which returns a band (`under_59_5`, `59_5_to_79`, `80_plus`), not the date (PG-0
 | `approver` | TEXT | I | `compliance` or `human:<reviewer_id>` |
 | `decision` | TEXT | I | `approve`, `hold`, `escalate`, `reject` |
 | `reasons` | TEXT (JSON) | I | Each reason cites a policy section |
-| `token_hmac` | TEXT, nullable | I | Present only for an approval to execute; HMAC-SHA256 of the proposal hash with `APPROVAL_SECRET` |
+| `token_hmac` | TEXT, nullable | I | Present only for an approval to execute; HMAC-SHA256 of the proposal ID and hash with `APPROVAL_SECRET` (#93) |
 | `used_at_turn` | INTEGER, nullable | I | Set on first use; a second use fails (single use) |
 
 **`cases`**
@@ -264,7 +264,7 @@ sequenceDiagram
     CF->>RU: proposal
     RU-->>CO: no flags
     CO-->>AP: approve + reasons · audit: compliance_decided
-    AP->>DB: approval with token = HMAC(proposal hash) · audit: token_issued
+    AP->>DB: approval with token = HMAC(proposal ID + hash) · audit: token_issued
     AP->>EX: proposal_id + token
     EX->>DB: one DB transaction: check token unused and hash unchanged, insert transaction (proposal_id UNIQUE), mark executed, audit: executed
     EX-->>C: "Done. Reference TX-..." · outcome EXECUTED

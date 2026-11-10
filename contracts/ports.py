@@ -10,6 +10,11 @@ Each lane implements or calls these Protocols and never imports another lane's m
 | `AccountStore` | data (`data/store/`) | agents (`intake`, the account node) |
 | `IdentityCheck` | data (`data/identity.py`) | agents (`identity_gate`) |
 | `CaseStore` | data (`data/store/`) | agents (the case node) |
+| `QuoteService` | data (`data/quote.py`) | agents (the Transaction node's `quote` tool) |
+| `ProposalStore` | data (`data/store/`) | agents (Transaction, confirm, approval edge) |
+| `ApprovalStore` | data (`data/store/`) | agents (the approval edge) |
+| `Ledger` | data (`data/store/`) | agents (the execute node) |
+| `PolicySource` | data (`data/knowledge_index/`) | agents (Compliance's `get_policy` tool) |
 """
 
 from datetime import date
@@ -18,7 +23,19 @@ from typing import Protocol
 
 from pydantic import AwareDatetime, Field, JsonValue
 
-from contracts.messages import AccountView, CasePacket, Citation, Message
+from contracts.messages import (
+    AccountView,
+    Approval,
+    CasePacket,
+    Citation,
+    Confirmation,
+    Execution,
+    Message,
+    Proposal,
+    ProposalStatus,
+    Quote,
+    QuoteRefusal,
+)
 from contracts.outcomes import Outcome
 from contracts.tools import Node, Step
 
@@ -145,6 +162,94 @@ class CaseStore(Protocol):
         The packet must already be scrubbed (FR-23): a precondition on the caller, checked by the
         restricted-field property test.
         """
+        ...
+
+
+# ---------- quotes, proposals, approvals and the ledger (FR-05 to FR-11; 0.5.0) ----------
+class QuoteService(Protocol):
+    def quote(self, customer_id: str, amount_cents: int, as_of: date) -> Quote | QuoteRefusal:
+        """An exact quote from records (FR-05, D-05), with the IRS notice under 59 1/2 (FR-06) and
+        the threshold tier (D-02), or a refusal with its reason (FR-07). Raises KeyError for an
+        unknown customer."""
+        ...
+
+
+class ProposalStore(Protocol):
+    def save(self, proposal: Proposal) -> None:
+        """Store a new proposal with status `quoted`. A duplicate ID raises."""
+        ...
+
+    def get(self, proposal_id: str) -> Proposal | None:
+        """The stored proposal (FR-08 checks it), or None."""
+        ...
+
+    def status(self, proposal_id: str) -> ProposalStatus:
+        """Raises KeyError for an unknown proposal."""
+        ...
+
+    def confirm(self, confirmation: Confirmation, conversation_id: str) -> None:
+        """Move `quoted` to `confirmed` (GR-17, FR-08). Raises ValueError when
+        `check_confirmation` refuses the yes (another proposal, another conversation, another
+        amount, or not a later turn)."""
+        ...
+
+    def move(self, proposal_id: str, status: ProposalStatus) -> None:
+        """Change status. Raises ValueError when `check_transition` refuses the move."""
+        ...
+
+
+class ApprovalStore(Protocol):
+    def record(self, approval: Approval) -> None:
+        """Store a Compliance or human decision and move the proposal as `DECISION_MOVES` says
+        (approve -> approved, hold or escalate -> escalated, reject -> voided, request_info ->
+        unchanged), through `check_transition`, in one transaction."""
+        ...
+
+
+class ExecutionRefusedReason(StrEnum):
+    """Why the ledger refused (FR-08 to FR-10, FR-26)."""
+
+    UNKNOWN_PROPOSAL = "unknown_proposal"
+    NOT_APPROVED = "not_approved"
+    TOKEN_INVALID = "token_invalid"
+    HASH_CHANGED = "hash_changed"
+    EXECUTION_DISABLED = "execution_disabled"  # FR-26 kill switch
+
+
+class ExecutionRefused(Exception):
+    """The ledger refused to execute; nothing was written."""
+
+    def __init__(self, reason: ExecutionRefusedReason) -> None:
+        super().__init__(reason.value)
+        self.reason = reason
+
+
+class Ledger(Protocol):
+    def execute(
+        self, proposal_id: str, token: str, turn: int, versions: dict[str, JsonValue]
+    ) -> Execution:
+        """Execute an approved proposal (FR-08 to FR-10) in one database transaction, all of it or
+        none of it. The checks run in this order (review on PR #92), each raising ExecutionRefused:
+
+        1. Unknown proposal: UNKNOWN_PROPOSAL.
+        2. Already executed: if `token` matches the one that executed it, return that first
+           Execution and write nothing (FR-09 replay); otherwise TOKEN_INVALID.
+        3. The deployment's execution switch is off: EXECUTION_DISABLED, whoever approved (FR-26).
+        4. Status is not `approved`: NOT_APPROVED.
+        5. `token` does not match `approval_token(proposal_id, stored hash, APPROVAL_SECRET)` on
+           the approving row, or that row's token was already used: TOKEN_INVALID.
+        6. The stored figures no longer hash to the stored hash: HASH_CHANGED.
+
+        Then: mark the token used at `turn`, insert the transaction (proposal_id UNIQUE), move the
+        proposal to `executed`, and write the `executed` audit row with the proposal's
+        conversation_id and `versions`. `approved_by` comes from the approving row.
+        """
+        ...
+
+
+class PolicySource(Protocol):
+    def get_policy(self, query: str, as_of: date, k: int = 4) -> list[KnowledgeChunk]:
+        """Best-matching chunks from the policy documents in force at `as_of` (Compliance only)."""
         ...
 
 
