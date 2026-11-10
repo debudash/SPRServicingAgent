@@ -413,7 +413,7 @@ def run_tampered(tmp_path: Path, attack: Callable[[Desk, str, str], tuple[str, s
 
     desk = Desk(tmp_path, ledger=wrap).play(withdraw(5_000), yes(5_000), MARGARET)
     tamper = desk.money.ledger
-    # Otherwise a regression that stops the flow earlier would pass these without testing the ledger.
+    # Else a regression that stops the flow earlier passes these without testing the ledger.
     assert isinstance(tamper, Tamper) and tamper.seen, "the attack never reached the ledger"
     return desk
 
