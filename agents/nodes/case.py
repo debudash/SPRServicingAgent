@@ -39,6 +39,10 @@ _WHY: dict[CaseReason, tuple[str, str]] = {
 
 
 def reason_for(state: ConversationState) -> CaseReason | None:
+    """Why this turn opens a case, or None. The one place the rule lives (routing and respond
+    ask here): a case names its customer (contracts 0.4.0), so no account bound means no case."""
+    if state.session.customer_id is None:
+        return None
     if state.gate is GateResult.LOCKED_NOW:
         return CaseReason.LOCKED
     if state.intent is not None and state.intent.kind is IntentKind.THIRD_PARTY:
@@ -50,7 +54,7 @@ def make(deps: Deps) -> NodeFn:
     def case(state: ConversationState) -> dict[str, Any]:
         reason = reason_for(state)
         customer_id = state.session.customer_id
-        if reason is None or customer_id is None:  # routing never sends either here
+        if reason is None or customer_id is None:  # routing only sends a turn with a reason
             return {}
         summary, recommendation = _WHY[reason]
         packet = CasePacket(

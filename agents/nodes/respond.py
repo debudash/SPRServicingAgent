@@ -6,6 +6,7 @@ figures straight from the record, formatted by `contracts.money`) or the case. N
 
 from typing import Any
 
+from agents.nodes import case
 from agents.nodes.common import ACCOUNT_INTENTS, Deps, NodeFn
 from contracts.messages import AccountView, IntentKind, Reply
 from contracts.money import format_dollars
@@ -130,7 +131,7 @@ def _decide(state: ConversationState, failure: str | None) -> tuple[Outcome, str
         outcome = Outcome.NOT_PERMITTED if locked else Outcome.NEEDS_HUMAN
         return outcome, _case_text(packet.case_id, locked), packet.case_id
     if kind is IntentKind.THIRD_PARTY:
-        if state.session.customer_id is None:  # #82: no account bound, so no case
+        if case.reason_for(state) is None:  # #82: no account bound, so no case
             return Outcome.NOT_PERMITTED, NO_ACCOUNT_THIRD_PARTY_TEXT, None
         return Outcome.UNAVAILABLE, UNAVAILABLE_TEXT, None  # the case was not opened
     if kind is IntentKind.OTHER_ACCOUNT:
