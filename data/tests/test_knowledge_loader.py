@@ -12,7 +12,9 @@ def test_real_knowledge_counts() -> None:
     # Superseded versions stay in knowledge/ beside the current one (knowledge/README.md), so
     # count the latest version of each document (#123).
     chunks = load_chunks(REPO / "knowledge")
-    latest = {c.doc_id: max(x.version for x in chunks if x.doc_id == c.doc_id) for c in chunks}
+    latest: dict[str, int] = {}
+    for c in chunks:
+        latest[c.doc_id] = max(latest.get(c.doc_id, 0), c.version)
     counts = Counter(c.doc_id for c in chunks if c.version == latest[c.doc_id])
     assert counts["fee_schedule"] == 5
     assert counts["product_summary"] == 7

@@ -14,6 +14,7 @@ from contracts.outcomes import Outcome
 from contracts.ports import LoginRefused, TurnResult
 from contracts.tools import Step
 from evals import run as run_mod
+from evals import score
 from evals.score import FAIL, NA, PASS, Restricted, case_status, score_case
 
 DOB, LAST4 = "1958-03-14", "7823"
@@ -133,7 +134,7 @@ cases:
     bullet: B1
     customer: null
     ask: "hi"
-    expect: {outcome: ANSWERED, contains: ["ok"], cites_version: current}
+    expect: {outcome: ANSWERED, contains: ["ok"], executed: false}
   - id: G-B2-01
     bullet: B2
     customer: null
@@ -190,7 +191,7 @@ def test_run_suite_skips_pending_and_later_bullets(tmp_path: Path) -> None:
     assert reasons["BH-B1-03"] == "retired"  # ADR 0007 / #117: reported, never run
     assert "reviewer" in reasons["BH-B1-04"]
     assert "G-B2-01" in reasons
-    assert res["not_checked"] == {"G-B1-01": ["cites_version"]}
+    assert res["not_checked"] == {"G-B1-01": ["executed"]}
 
 
 # ---------- #103 (ADR 0007): login, guests and the step-up ----------
@@ -330,8 +331,6 @@ def test_repeat_and_scorecard(tmp_path: Path) -> None:
 
 
 def test_main_writes_files_and_score_cli(tmp_path: Path) -> None:
-    from evals import score
-
     rc = run_mod.main(["--suite", "golden", "--bullet", "B1", "--out", str(tmp_path)], FakeRunner())
     assert rc == 0
     js = next(tmp_path.glob("*.json"))
@@ -376,3 +375,37 @@ cases:
         text = path.read_text()
         assert "1960-01-01" not in text
         assert "1111" not in text
+
+
+# ---------- #123: `cites_version: current` is scored (GR-04) ----------
+def _cites(*versions: tuple[str, int]) -> TurnResult:
+    return turn(
+        "3%", citations=tuple(Citation(doc_id=d, version=v, section="s") for d, v in versions)
+    )
+
+
+def test_cites_version_passes_only_the_version_in_force() -> None:
+    expect = {"cites_version": "current"}
+    in_force = {"fee_schedule": 2, "faq": 1}
+    ok = score_case(expect, [_cites(("fee_schedule", 2), ("faq", 1))], in_force=in_force)
+    assert ok.verdict == PASS and "cites_version" not in ok.not_checked
+    stale = score_case(expect, [_cites(("fee_schedule", 1))], in_force=in_force)
+    assert (stale.verdict, stale.failed_key) == (FAIL, "cites_version")
+    assert "fee_schedule v1" in stale.detail
+    unknown = score_case(expect, [_cites(("made_up", 1))], in_force=in_force)
+    assert unknown.failed_key == "cites_version"
+
+
+def test_versions_in_force_reads_front_matter_at_the_as_of_date(tmp_path: Path) -> None:
+    def doc(name: str, version: int, effective: str) -> None:
+        (tmp_path / name).write_text(
+            f"---\ndoc_id: fees\nversion: {version}\neffective_date: {effective}\n---\n### A\nx\n"
+        )
+
+    doc("fees_v1.md", 1, "2016-01-01")
+    doc("fees.md", 2, "2020-01-01")
+    doc("fees_future.md", 3, "2030-01-01")
+    (tmp_path / "README.md").write_text("no front matter\n")
+    assert score.versions_in_force(tmp_path, date(2024, 12, 1)) == {"fees": 2}
+    assert score.versions_in_force(tmp_path, date(2018, 1, 1)) == {"fees": 1}
+    assert score.versions_in_force(tmp_path, date(2015, 1, 1)) == {}
