@@ -1,7 +1,7 @@
 """intake: sets up the turn. Writes the versions in force and the session binding.
 
-Credentials and identity (Gate A, Gate B, scrubbing) belong to B2 and are not here: `intake`
-binds only the customer ID the conversation was started with, and Gate A stays untrusted.
+The customer ID is bound when the conversation starts (auth is upstream). `intake` records Gate A
+for it from the account store each turn (issue #59); Gate B belongs to identity_gate.
 """
 
 from typing import Any
@@ -21,7 +21,10 @@ def make(deps: Deps) -> NodeFn:
         models = {
             role.value: deps.model_names[role] for role in PROMPT_IDS if role in deps.model_names
         }
+        customer_id = state.session.customer_id
+        trusted = customer_id is not None and deps.accounts.gate_a(customer_id)
         return {
+            "session.gate_a_trusted": trusted,
             "as_of": deps.clock(),
             "versions": Versions(
                 contracts=CONTRACTS_VERSION,

@@ -173,6 +173,12 @@ def capture(text: str, as_of: date, challenge_open: bool = False) -> tuple[str, 
     # every bare group is a candidate, so credentials split across turns are masked too.
     if challenge_open or dobs or (has_ssn_word and not near):
         masked = _mask_bare_groups(masked, bare)
+    else:
+        # Issue #75 (found by the red team, #60): spaced and spelled runs were masked only in
+        # credential context, so "sorry: 7-8-2-3" after verifying reached the model. Such runs
+        # are never an amount or a year, so they are masked in every turn; only plain four-digit
+        # groups stay context-dependent, because those can be money.
+        masked = _mask_digit_runs(masked, bare)
 
     if _BIRTH_WORD.search(text):  # #68: a birth year on its own is still part of a DOB
         masked = _BIRTH_YEAR.sub(lambda m: DOB_MASK if _not_money(masked, m) else m[0], masked)
@@ -227,6 +233,17 @@ def _mask_near_ssn_words(text: str, found: list[str]) -> str:
     return "".join(out)
 
 
+def _mask_digit_runs(text: str, found: list[str]) -> str:
+    """Spelled ("seven eight two three") and spaced ("7 8 2 3") runs: never money, always masked."""
+
+    def run(m: re.Match[str]) -> str:
+        found.append(_digits_of(m.group(0)))
+        return SSN4_MASK
+
+    text = _SPELLED_RUN.sub(run, text)
+    return _SPACED_DIGITS.sub(run, text)
+
+
 def _mask_bare_groups(text: str, found: list[str]) -> str:
     def digits(m: re.Match[str]) -> str:
         if not _not_money(text, m):
@@ -234,12 +251,7 @@ def _mask_bare_groups(text: str, found: list[str]) -> str:
         found.append(m.group(0))
         return SSN4_MASK
 
-    def spelled(m: re.Match[str]) -> str:
-        found.append(_digits_of(m.group(0)))
-        return SSN4_MASK
-
-    text = _SPELLED_RUN.sub(spelled, text)
-    text = _SPACED_DIGITS.sub(spelled, text)
+    text = _mask_digit_runs(text, found)
     return _FOUR_DIGITS.sub(digits, text)
 
 

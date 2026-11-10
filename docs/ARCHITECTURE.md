@@ -123,7 +123,7 @@ which returns a band (`under_59_5`, `59_5_to_79`, `80_plus`), not the date (PG-0
 | `approver` | TEXT | I | `compliance` or `human:<reviewer_id>` |
 | `decision` | TEXT | I | `approve`, `hold`, `escalate`, `reject` |
 | `reasons` | TEXT (JSON) | I | Each reason cites a policy section |
-| `token_hmac` | TEXT, nullable | I | Present only for an approval to execute; HMAC-SHA256 of the proposal hash with `APPROVAL_SECRET` |
+| `token_hmac` | TEXT, nullable | I | Present only for an approval to execute; HMAC-SHA256 of the proposal ID and hash with `APPROVAL_SECRET` (#93) |
 | `used_at_turn` | INTEGER, nullable | I | Set on first use; a second use fails (single use) |
 
 **`cases`**
@@ -132,7 +132,7 @@ which returns a band (`under_59_5`, `59_5_to_79`, `80_plus`), not the date (PG-0
 |---|---|---|---|
 | `case_id` | TEXT PK | I | The case reference shown to the customer |
 | `conversation_id` | TEXT FK | I | |
-| `customer_id` | TEXT FK, nullable | I | Null when a third party contacts the desk about someone they do not identify |
+| `customer_id` | TEXT FK | I | Required by the contract (0.4.0, #80): every case names its customer. A third party in an anonymous session gets no case and is told the owner must contact SPR. The column is still nullable in migration 0002; the contract enforces it at the port |
 | `proposal_id` | TEXT FK, nullable | I | |
 | `opened_for` | TEXT | I | `CaseReason`: `locked` (D-08), `third_party` (D-09); later bullets add reasons |
 | `reasons` | TEXT (JSON) | I | Rule flags and Compliance reasons |
@@ -227,6 +227,10 @@ sequenceDiagram
     end
 ```
 
+FR-03 at the start (#82): the desk's first reply in a session bound to an untrusted account carries the
+notice and the contact number, whatever the turn asked; a product question is still answered. A third
+party in an anonymous session gets no case (contracts 0.4.0): there is no account to open one for.
+
 Where the capture runs: at the runner's entry, before the customer turn is appended to the
 transcript, so the raw text never enters `ConversationState` (and so never reaches a checkpoint).
 The candidates live only in the per-turn context that `identity_gate` reads. A turn with no usable
@@ -260,7 +264,7 @@ sequenceDiagram
     CF->>RU: proposal
     RU-->>CO: no flags
     CO-->>AP: approve + reasons · audit: compliance_decided
-    AP->>DB: approval with token = HMAC(proposal hash) · audit: token_issued
+    AP->>DB: approval with token = HMAC(proposal ID + hash) · audit: token_issued
     AP->>EX: proposal_id + token
     EX->>DB: one DB transaction: check token unused and hash unchanged, insert transaction (proposal_id UNIQUE), mark executed, audit: executed
     EX-->>C: "Done. Reference TX-..." · outcome EXECUTED

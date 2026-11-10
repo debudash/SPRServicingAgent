@@ -11,11 +11,16 @@ from pydantic import BaseModel
 
 from agents.guards.credentials import Credentials
 from agents.tools.registry import ToolRegistry
-from contracts.ports import AuditLog, Usage
+from contracts.messages import IntentKind
+from contracts.ports import AccountStore, AuditLog, CaseStore, IdentityCheck, Usage
 from contracts.state import MAX_TOOL_CALLS_PER_TURN, ConversationState
 from contracts.tools import Node, Role, Step
 
 NodeFn = Callable[[ConversationState], dict[str, Any]]
+
+# Intents answered from the account, so both gates must hold first (FR-02). Routing and respond
+# share this one set.
+ACCOUNT_INTENTS = frozenset({IntentKind.ACCOUNT_INFO, IntentKind.VERIFY})
 
 
 class BudgetExceeded(Exception):
@@ -31,6 +36,8 @@ class TurnContext:
     tool_calls: int = 0
     nodes: list[Node] = field(default_factory=list)
     steps: list[Step] = field(default_factory=list)
+    # The node each step was taken in, for the trace (issue #59: B1 had one step-taking node).
+    step_nodes: list[Node] = field(default_factory=list)
     failure: str | None = None  # set when the turn must end UNAVAILABLE
     provider_error: bool = False
     audited: bool = False
@@ -41,6 +48,10 @@ class TurnContext:
     # This turn's credential candidates (ADR 0005). Held here, outside ConversationState, so they
     # never reach a checkpoint or trace; read only by identity_gate.
     credentials: Credentials | None = field(default=None, repr=False)
+
+    def record(self, node: Node, step: Step) -> None:
+        self.steps.append(step)
+        self.step_nodes.append(node)
 
     def spend_tool_call(self) -> None:
         if self.tool_calls >= MAX_TOOL_CALLS_PER_TURN:
@@ -56,6 +67,16 @@ class TurnContext:
         )
 
 
+@dataclass(frozen=True)
+class Stores:
+    """The B2 records the desk reads and writes: accounts (Gate A, views), the identity check
+    (Gate B) and cases. Built together by the wiring, passed together to the runner."""
+
+    accounts: AccountStore
+    identity: IdentityCheck
+    cases: CaseStore
+
+
 @dataclass
 class Deps:
     audit: AuditLog
@@ -64,6 +85,9 @@ class Deps:
     model_names: Mapping[Role, str]
     clock: Callable[[], date]
     turn: TurnContext
+    accounts: AccountStore
+    identity: IdentityCheck
+    cases: CaseStore
 
 
 def invoke_structured[T: BaseModel](
@@ -96,7 +120,15 @@ def latest_customer_text(state: ConversationState) -> str:
 
 def session_context(state: ConversationState) -> str:
     """Session facts safe for a model and stable across conversations: no IDs, no dates."""
-    who = "bound to a customer" if state.session.customer_id else "anonymous"
+    s = state.session
+    if s.customer_id is None:
+        who = "anonymous"
+    elif s.locked:
+        who = "bound to a customer; identity checks locked"
+    elif s.gate_b_passed:
+        who = "bound to a customer; identity verified"
+    else:
+        who = "bound to a customer; identity not yet verified"
     return f"Session: {who}. Customer turn {state.turn}."
 
 

@@ -10,7 +10,7 @@ from agents.testing import ScriptedChatModel
 from contracts.messages import Intent, IntentKind
 from contracts.tools import Role
 
-from .test_graph import FakeSearch, MemoryAudit
+from .test_graph import FakeSearch, MemoryAudit, no_accounts
 
 DOB = date(1958, 3, 14)
 AS_OF = date(2024, 12, 1)
@@ -96,6 +96,7 @@ def test_runner_masks_the_turn_before_anything_sees_it() -> None:
         audit=audit,
         models={Role.CONCIERGE: concierge, Role.KNOWLEDGE: ScriptedChatModel()},
         clock=lambda: date(2024, 12, 1),
+        stores=no_accounts(),
     )
     conv = runner.start("SPR-1001")
     result = runner.send(conv, "My date of birth is 1958-03-14 and the last four are 7823.")
@@ -184,7 +185,10 @@ def test_issue_67_a_bare_last_four_is_captured_while_a_challenge_is_open(text: s
     out, creds = capture(text, AS_OF, challenge_open=True)
     assert creds is not None and creds.last4 == "7823"
     assert "7823" not in out and "seven" not in out
-    assert capture(text, AS_OF) == (text, None)  # no challenge open: an ordinary number
+    if any(c.isdigit() for c in text):
+        assert capture(text, AS_OF) == (text, None)  # no challenge open: an ordinary number
+    else:  # #75: a spelled run is never an amount, so it is masked with or without a challenge
+        assert "seven" not in capture(text, AS_OF)[0]
 
 
 def test_issue_67_runner_masks_credentials_split_across_turns() -> None:
@@ -194,6 +198,7 @@ def test_issue_67_runner_masks_credentials_split_across_turns() -> None:
         audit=MemoryAudit(),
         models={Role.CONCIERGE: concierge, Role.KNOWLEDGE: ScriptedChatModel()},
         clock=lambda: AS_OF,
+        stores=no_accounts(),
     )
     conv = runner.start("SPR-1001")
     runner.send(conv, "My date of birth is 1958-03-14.")
@@ -229,3 +234,16 @@ def test_issue_68_common_forms_are_captured(
 def test_issue_68_a_birth_year_alone_is_masked() -> None:
     out, creds = capture("I was born on the fourteenth of March, 1958", AS_OF)
     assert "1958" not in out and creds is None  # masked, but not a usable candidate
+
+
+# ---------- #75: spaced or spelled digits reached the model with no challenge open ----------
+# Found by the restricted-field red team (#60): "sorry: 7-8-2-3" after verifying.
+@pytest.mark.parametrize("text", ["sorry: 7-8-2-3", "it's 7 8 2 3", "seven eight two three"])
+def test_issue_75_spaced_and_spelled_digits_are_masked_in_any_turn(text: str) -> None:
+    out, creds = capture(text, AS_OF)  # no challenge open, no SSN word, no date
+    assert "7" not in out and "seven" not in out
+    assert creds is not None and creds.last4 == "7823"
+
+
+def test_issue_75_plain_amounts_still_pass_with_no_challenge_open() -> None:
+    assert capture("take out 2000 please", AS_OF) == ("take out 2000 please", None)

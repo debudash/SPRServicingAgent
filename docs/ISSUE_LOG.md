@@ -15,3 +15,15 @@ Defects found in review are the evidence for workstream F (ADR 0002), so they al
 | #31 | 2026-11-09 | AuditRecord accepted any string as its timestamp | review on PR #29 (both axes) | 894941e |
 | #32 | 2026-11-09 | AuditLog.append accepted values AuditRecord would refuse | review on PR #29 (standards) | f1704ea |
 | #62 | 2026-11-09 | ConversationState accepted gate results the session contradicts | review on PR #61 (both axes) | 0d736c4 |
+| #65 | 2026-11-09 | A malformed stored date of birth would be quoted in an exception message | review on PR #63 (standards) | da20f31 |
+| #66 | 2026-11-09 | Identity-table isolation test missed SQL that reads the dob column | review on PR #63 (spec) | 8a60eb5 |
+| #67 | 2026-11-09 | A credential sent in its own turn reached the model unmasked | review on PR #64 (standards) | e078bcb |
+| #68 | 2026-11-09 | Common credential forms (no-keyword SSN, 2-digit-year, dotted, compact dates, spaced digits) reached the model raw | review on PR #64 (both axes) | 19fedf2 |
+| #69 | 2026-11-09 | Ordinary turns were captured as credentials and would count as failed challenges | review on PR #64 (spec) | 8c73262 |
+| #70 | 2026-11-09 | Credentials values were exposable through asdict, equality and pickling | review on PR #64 (standards) | 25ea5c2 |
+| #73 | 2026-11-09 | Lockout was lost (and the next try could pass) when the lock case could not be opened | review on PR #72 (spec) | 7ed5009 |
+| #74 | 2026-11-09 | Credentials in a turn swallowed the customer's actual request | review on PR #72 (spec) | de2a399 |
+| #75 | 2026-11-09 | Spaced or spelled SSN digits reached the model once no challenge was open | red team (#60) | c7d9632 |
+| #84 | 2026-11-09 | The first-turn notice for an untrusted account was lost if turn 1 failed | review on PR #83 (spec) | 7582091 |
+| #93 | 2026-11-09 | Approval token was bound to the proposal hash only, so identical proposals shared a token | review on PR #92 (spec) | 5bd6dc5 |
+| #94 | 2026-11-09 | Proposal status machine could not escalate from quoted or approved | review on PR #92 (spec) | ec7186d |
