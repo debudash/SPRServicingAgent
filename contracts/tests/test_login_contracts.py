@@ -56,8 +56,9 @@ def _state(session: Session, view: AccountView | None = None) -> ConversationSta
     )
 
 
-def test_version_is_0_6_0() -> None:
-    assert CONTRACTS_VERSION == "0.6.0"
+def test_version_is_0_6_1() -> None:
+    # 0.6.1 (#89) adds CaseReason.WITHDRAWAL_REVIEW on top of this file's 0.6.0 ports.
+    assert CONTRACTS_VERSION == "0.6.1"
 
 
 # ---------- the session records the login ----------

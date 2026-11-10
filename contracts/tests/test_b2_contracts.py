@@ -15,6 +15,8 @@ from contracts.messages import (
     CasePacket,
     CaseReason,
     IntentKind,
+    Quote,
+    ThresholdTier,
 )
 from contracts.ports import AccountStore, CaseStore, IdentityCheck
 from contracts.state import (
@@ -242,3 +244,34 @@ def test_issue_80_a_case_packet_needs_a_customer(customer_id: str | None) -> Non
             excerpt="what's my mum's balance",
             recommendation="None: no account to act on.",
         )
+
+
+# ---------- 0.6.1 (#89): a withdrawal review carries its quote ----------
+def _review_packet(quote: Quote | None) -> CasePacket:
+    return CasePacket(
+        case_id="CASE-1",
+        conversation_id="CV1",
+        customer_id="SPR-1001",
+        opened_for=CaseReason.WITHDRAWAL_REVIEW,
+        request_summary="Withdrawal over $25,000.",
+        quote=quote,
+        excerpt="withdraw $30,000",
+        recommendation="Review the withdrawal.",
+    )
+
+
+def test_a_withdrawal_review_carries_its_quote() -> None:
+    quote = Quote(
+        amount_cents=3_000_000,
+        free_cents=874_506,
+        excess_cents=2_125_494,
+        rate_bp=600,
+        charge_cents=127_530,
+        net_cents=2_872_470,
+        contract_year=3,
+        threshold_tier=ThresholdTier.HUMAN,
+        irs_notice=False,
+    )
+    assert _review_packet(quote).quote == quote
+    with pytest.raises(ValidationError):
+        _review_packet(None)

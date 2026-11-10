@@ -15,6 +15,9 @@ change: the account-view rule *relaxes* to Gate A and (a login or Gate B), with 
 (#107). Nothing that validated before is refused, except states no flow produces (#108).
 The next version tightens them (an account view needs a login, the step-up needs a login, `start`
 is for guests only) once the lanes comply (#102, #103), the same way 0.4.0 was made.
+
+0.6.1 (#89) is additive: `CaseReason.WITHDRAWAL_REVIEW`, the case for a withdrawal a person must
+review, which always carries its quote.
 """
 
-CONTRACTS_VERSION = "0.6.0"
+CONTRACTS_VERSION = "0.6.1"
