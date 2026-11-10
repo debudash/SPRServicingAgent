@@ -226,3 +226,19 @@ def test_issue_62_every_gate_result_has_a_rule() -> None:
     from contracts.state import GATE_REQUIRES
 
     assert set(GATE_REQUIRES) == set(GateResult)
+
+
+# ---------- #80: every case names its customer (owner decision) ----------
+@pytest.mark.parametrize("customer_id", [None, ""])
+def test_issue_80_a_case_packet_needs_a_customer(customer_id: str | None) -> None:
+    with pytest.raises(ValidationError):
+        CasePacket(
+            case_id="CASE-3",
+            conversation_id="CV1",
+            customer_id=customer_id,
+            opened_for=CaseReason.THIRD_PARTY,
+            request_summary="Someone asked about an account they did not identify.",
+            quote=None,
+            excerpt="what's my mum's balance",
+            recommendation="None: no account to act on.",
+        )

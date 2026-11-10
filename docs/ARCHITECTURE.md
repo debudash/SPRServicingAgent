@@ -132,7 +132,7 @@ which returns a band (`under_59_5`, `59_5_to_79`, `80_plus`), not the date (PG-0
 |---|---|---|---|
 | `case_id` | TEXT PK | I | The case reference shown to the customer |
 | `conversation_id` | TEXT FK | I | |
-| `customer_id` | TEXT FK, nullable | I | Null when a third party contacts the desk about someone they do not identify |
+| `customer_id` | TEXT FK | I | Required by the contract (0.4.0, #80): every case names its customer. A third party in an anonymous session gets no case and is told the owner must contact SPR. The column is still nullable in migration 0002; the contract enforces it at the port |
 | `proposal_id` | TEXT FK, nullable | I | |
 | `opened_for` | TEXT | I | `CaseReason`: `locked` (D-08), `third_party` (D-09); later bullets add reasons |
 | `reasons` | TEXT (JSON) | I | Rule flags and Compliance reasons |
