@@ -153,6 +153,44 @@ class Proposal(Message):
         return self
 
 
+class QuoteRefusalReason(StrEnum):
+    """FR-07: why a quote was refused (0.5.0)."""
+
+    NOT_POSITIVE = "not_positive"  # the amount is zero or less
+    OVER_BALANCE = "over_balance"  # more than the current balance
+    NOT_ACTIVE = "not_active"  # the account is not active
+
+
+class QuoteRefusal(Message):
+    reason: QuoteRefusalReason
+
+
+class ProposalStatus(StrEnum):
+    """A proposal's life (ARCHITECTURE 2.2; 0.5.0)."""
+
+    QUOTED = "quoted"
+    CONFIRMED = "confirmed"
+    APPROVED = "approved"
+    EXECUTED = "executed"
+    VOIDED = "voided"
+    ESCALATED = "escalated"
+
+
+# The only moves a proposal store may make. The yes comes before any approval (GR-17), approval
+# before execution (FR-08); executed and voided are final. An escalated proposal goes to a human
+# (B4), who approves or voids it.
+PROPOSAL_TRANSITIONS: dict[ProposalStatus, frozenset[ProposalStatus]] = {
+    ProposalStatus.QUOTED: frozenset({ProposalStatus.CONFIRMED, ProposalStatus.VOIDED}),
+    ProposalStatus.CONFIRMED: frozenset(
+        {ProposalStatus.APPROVED, ProposalStatus.ESCALATED, ProposalStatus.VOIDED}
+    ),
+    ProposalStatus.APPROVED: frozenset({ProposalStatus.EXECUTED, ProposalStatus.VOIDED}),
+    ProposalStatus.ESCALATED: frozenset({ProposalStatus.APPROVED, ProposalStatus.VOIDED}),
+    ProposalStatus.EXECUTED: frozenset(),
+    ProposalStatus.VOIDED: frozenset(),
+}
+
+
 class Confirmation(Message):
     proposal_id: str
     amount_cents: Cents = Field(gt=0)

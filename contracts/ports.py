@@ -10,6 +10,11 @@ Each lane implements or calls these Protocols and never imports another lane's m
 | `AccountStore` | data (`data/store/`) | agents (`intake`, the account node) |
 | `IdentityCheck` | data (`data/identity.py`) | agents (`identity_gate`) |
 | `CaseStore` | data (`data/store/`) | agents (the case node) |
+| `QuoteService` | data (`data/quote.py`) | agents (the Transaction node's `quote` tool) |
+| `ProposalStore` | data (`data/store/`) | agents (Transaction, confirm, approval edge) |
+| `ApprovalStore` | data (`data/store/`) | agents (the approval edge) |
+| `Ledger` | data (`data/store/`) | agents (the execute node) |
+| `PolicySource` | data (`data/knowledge_index/`) | agents (Compliance's `get_policy` tool) |
 """
 
 from datetime import date
@@ -18,7 +23,19 @@ from typing import Protocol
 
 from pydantic import AwareDatetime, Field, JsonValue
 
-from contracts.messages import AccountView, CasePacket, Citation, Message
+from contracts.messages import (
+    AccountView,
+    Approval,
+    CasePacket,
+    Citation,
+    Confirmation,
+    Execution,
+    Message,
+    Proposal,
+    ProposalStatus,
+    Quote,
+    QuoteRefusal,
+)
 from contracts.outcomes import Outcome
 from contracts.tools import Node, Step
 
@@ -145,6 +162,80 @@ class CaseStore(Protocol):
         The packet must already be scrubbed (FR-23): a precondition on the caller, checked by the
         restricted-field property test.
         """
+        ...
+
+
+# ---------- quotes, proposals, approvals and the ledger (FR-05 to FR-11; 0.5.0) ----------
+class QuoteService(Protocol):
+    def quote(self, customer_id: str, amount_cents: int, as_of: date) -> Quote | QuoteRefusal:
+        """An exact quote from records (FR-05, D-05), with the IRS notice under 59 1/2 (FR-06) and
+        the threshold tier (D-02), or a refusal with its reason (FR-07). Raises KeyError for an
+        unknown customer."""
+        ...
+
+
+class ProposalStore(Protocol):
+    def save(self, proposal: Proposal) -> None:
+        """Store a new proposal with status `quoted`. A duplicate ID raises."""
+        ...
+
+    def get(self, proposal_id: str) -> Proposal | None: ...
+
+    def status(self, proposal_id: str) -> ProposalStatus:
+        """Raises KeyError for an unknown proposal."""
+        ...
+
+    def confirm(self, confirmation: Confirmation) -> None:
+        """Move `quoted` to `confirmed` (GR-17). Raises ValueError unless the amount is the quoted
+        amount and the yes came on a later turn than the quote."""
+        ...
+
+    def move(self, proposal_id: str, status: ProposalStatus) -> None:
+        """Change status. Raises ValueError for a move PROPOSAL_TRANSITIONS does not allow."""
+        ...
+
+
+class ApprovalStore(Protocol):
+    def record(self, approval: Approval) -> None:
+        """Store a Compliance or human decision. An approve moves the proposal to `approved`;
+        an escalate moves it to `escalated`."""
+        ...
+
+
+class ExecutionRefusedReason(StrEnum):
+    UNKNOWN_PROPOSAL = "unknown_proposal"
+    NOT_APPROVED = "not_approved"
+    TOKEN_INVALID = "token_invalid"
+    HASH_CHANGED = "hash_changed"
+    EXECUTION_DISABLED = "execution_disabled"  # FR-26 kill switch
+
+
+class ExecutionRefused(Exception):
+    """The ledger refused to execute; nothing was written."""
+
+    def __init__(self, reason: ExecutionRefusedReason) -> None:
+        super().__init__(reason.value)
+        self.reason = reason
+
+
+class Ledger(Protocol):
+    def execute(
+        self, proposal_id: str, token: str, turn: int, versions: dict[str, JsonValue]
+    ) -> Execution:
+        """Execute an approved proposal (FR-08 to FR-10), in one database transaction: check the
+        token against `approval_token(stored hash, APPROVAL_SECRET)` and unused, re-check the hash
+        against the stored figures, insert the transaction (proposal_id UNIQUE), mark the
+        proposal executed and write the `executed` audit row. All of it or none of it.
+
+        Idempotent (FR-09): replaying an executed proposal returns its first Execution and writes
+        nothing. Any failed check raises ExecutionRefused.
+        """
+        ...
+
+
+class PolicySource(Protocol):
+    def get_policy(self, query: str, as_of: date, k: int = 4) -> list[KnowledgeChunk]:
+        """Best-matching chunks from the policy documents in force at `as_of` (Compliance only)."""
         ...
 
 
