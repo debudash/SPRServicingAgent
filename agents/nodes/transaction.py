@@ -56,6 +56,11 @@ def make(deps: Deps) -> NodeFn:
         )
         if isinstance(result, QuoteRefusal):  # FR-07: refused with the reason, nothing saved
             deps.turn.quote_refusal = result.reason
+            # Issue #130: only a successful quote voided the one it replaced, so after a refused
+            # new amount the old quote stayed live, its yes still waited for the step-up, and a
+            # bare "yes" confirmed it. Asking for a new amount supersedes the old quote, whatever
+            # the new quote's outcome (GR-17, GR-18).
+            void_superseded(state)
             return {}
         proposal = Proposal(
             proposal_id=f"prop-{uuid.uuid4().hex[:12]}",

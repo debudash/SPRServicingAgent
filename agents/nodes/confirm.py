@@ -22,8 +22,13 @@ from contracts.tools import Node
 def make(deps: Deps) -> NodeFn:
     def confirm(state: ConversationState) -> dict[str, Any]:
         proposal, intent, earlier = state.proposal, state.intent, state.confirmation
+        # Issue #130: a yes was cleared only when the proposal's ID changed, so a yes for a quote
+        # voided in place (a refused new amount) kept waiting for the step-up. A yes stands only
+        # while its proposal is still confirmed in the store.
         stale = earlier is not None and (
-            proposal is None or earlier.proposal_id != proposal.proposal_id
+            proposal is None
+            or earlier.proposal_id != proposal.proposal_id
+            or deps.proposals.status(earlier.proposal_id) is not ProposalStatus.CONFIRMED
         )
         cleared: dict[str, Any] = {"confirmation": None} if stale else {}
         if proposal is None or intent is None or intent.kind not in MONEY_INTENTS:

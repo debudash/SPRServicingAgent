@@ -239,3 +239,28 @@ def test_a_repeated_yes_confirms_once(tmp_path: Path) -> None:
     r = desk.say("Yes, go ahead with $5,000.")
     assert r.step_up_required
     assert desk.events().count(AuditEvent.CONFIRMED) == 1
+
+
+# ---------- #130: a refused new amount left the old quote live ----------
+# Found by /code-review on PR #129 (spec): only a successful quote voided the one it replaced.
+def test_issue_130_a_refused_new_amount_voids_the_old_quote_and_its_yes(tmp_path: Path) -> None:
+    desk = Desk(tmp_path, withdraw(5_000), confirm(5_000), withdraw(100_000)).login("SPR-1001")
+    desk.say("Withdraw $5,000.")
+    first, _ = desk.proposal()
+    assert desk.say("Yes, go ahead with $5,000.").step_up_required
+    r = desk.say("Withdraw $100,000.")
+    assert r.outcome is Outcome.NOT_PERMITTED
+    assert not r.step_up_required
+    assert desk.status(first) is ProposalStatus.VOIDED
+    assert desk.runner._states[desk.conv].confirmation is None
+
+
+def test_issue_130_a_bare_yes_after_a_refused_amount_confirms_nothing(tmp_path: Path) -> None:
+    desk = Desk(tmp_path, withdraw(5_000), withdraw(100_000), confirm(None)).login("SPR-1001")
+    desk.say("Withdraw $5,000.")
+    first, _ = desk.proposal()
+    desk.say("Withdraw $100,000.")
+    r = desk.say("Yes.")
+    assert desk.status(first) is ProposalStatus.VOIDED  # GR-17: not a yes to the $5,000
+    assert not r.step_up_required
+    assert "no quote" in r.reply_text
