@@ -1,6 +1,6 @@
 # 0007. Sessions start at a login; a step-up check guards money
 
-Date: 2026-11-10 · Status: **proposed** · Decided by: integrator (owner) · Issue: #78
+Date: 2026-11-10 · Status: accepted · Decided by: integrator (owner) · Issue: #78
 
 Supersedes this ADR's first draft ("the identity check masks the bound customer's own stored values").
 Narrows ADR 0005: credential capture from chat text becomes a backstop, no longer the way in.
@@ -96,12 +96,11 @@ Scenarios:
 8. Three failed step-ups: lockout and a case.
 9. Kill switch on: a confirmed withdrawal goes to a human (FR-26).
 
-## Open items for the owner
-1. **Guest access.** The current anonymous session (product questions without a customer, third parties
-   told to have the owner call) would become a "Continue without logging in" link on the login page.
-   Recommended: keep it.
-2. **How long a step-up lasts.** Recommended: once per session. Per withdrawal is stricter, but in a demo
-   it would only add a second form to scenario 4.
+## Owner decisions (2026-11-10)
+1. **Guest access is kept.** The login page has a "Continue without logging in" link. A guest session
+   answers product questions, and a third party there is told the owner must contact SPR (D-09).
+2. **A step-up lasts for the session.** Once passed, later withdrawals in the same session don't ask
+   again. The lockout still counts failures across the session.
 
 ## Alternatives rejected
 - **Mask the bound customer's own stored values on every turn** (this ADR's first draft). It creates the
