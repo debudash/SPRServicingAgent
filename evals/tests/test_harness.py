@@ -24,7 +24,7 @@ def turn(text: str = "ok", outcome: Outcome = Outcome.ANSWERED, **kw: Any) -> Tu
 
 
 class FakeRunner:
-    """A LoginDeskRunner fake: `replies` answer send and step_up in order."""
+    """A LoginDeskRunner fake: `replies` answer send and step_up in order; LOGINS log in."""
 
     def __init__(self, replies: list[TurnResult] | None = None) -> None:
         self.replies = replies or []
@@ -39,7 +39,7 @@ class FakeRunner:
 
     def login(self, customer_id: str, password: str) -> str | LoginRefused:
         self.logins.append((customer_id, password))
-        return "c1" if password.endswith("-demo") else LoginRefused()
+        return "c1" if LOGINS.get(customer_id) == password else LoginRefused()
 
     def send(self, conversation_id: str, text: str) -> TurnResult:
         self.sent.append((conversation_id, text))
@@ -112,10 +112,19 @@ def test_case_status() -> None:
     assert case_status([NA]) == NA
 
 
+LOGINS = {"SPR-1001": "pw-1001"}  # the harness's own logins file, not data/demo_logins.json
+
+
 def write_golden(tmp: Path, golden: str, behavioural: str) -> Path:
     (tmp / "golden.yaml").write_text(golden)
     (tmp / "behavioural.yaml").write_text(behavioural)
     return tmp
+
+
+def write_logins(tmp: Path, passwords: dict[str, str]) -> Path:
+    path = tmp / "logins.json"
+    path.write_text(json.dumps({"passwords": passwords}))
+    return path
 
 
 GOLDEN = """
@@ -165,7 +174,10 @@ cases:
 
 def run(tmp_path: Path, runner: FakeRunner, **kw: Any) -> dict[str, Any]:
     write_golden(tmp_path, GOLDEN, BEHAVIOURAL)
-    return run_mod.run_suite(runner, suite="all", bullet="B1", golden_dir=tmp_path, **kw)
+    logins = write_logins(tmp_path, LOGINS)
+    return run_mod.run_suite(
+        runner, suite="all", bullet="B1", golden_dir=tmp_path, logins=logins, **kw
+    )
 
 
 def test_run_suite_skips_pending_and_later_bullets(tmp_path: Path) -> None:
@@ -188,7 +200,7 @@ def test_a_customer_case_logs_in_with_the_demo_password_and_a_guest_starts(
     runner = FakeRunner()
     run(tmp_path, runner)
     assert runner.started == [None]  # G-B1-01 is a guest
-    assert runner.logins == [("SPR-1001", "margaret-demo")]
+    assert runner.logins == [("SPR-1001", "pw-1001")]
 
 
 def test_the_harness_answers_a_step_up_and_scores_that_turn(tmp_path: Path) -> None:
@@ -229,7 +241,8 @@ cases:
 """
     write_golden(tmp_path, "cases: []\n", behavioural)
     runner = FakeRunner([turn("confirm it", step_up_required=True)])
-    run_mod.run_suite(runner, suite="behavioural", bullet="B1", golden_dir=tmp_path)
+    logins = write_logins(tmp_path, LOGINS)
+    run_mod.run_suite(runner, suite="behavioural", bullet="B1", golden_dir=tmp_path, logins=logins)
     assert runner.step_ups == [
         ("c1", date(1960, 1, 1), "1111"),
         ("c1", date(1958, 3, 14), LAST4),
@@ -241,17 +254,29 @@ def test_a_refused_login_fails_the_case(tmp_path: Path) -> None:
 cases:
   - id: BH-B1-09
     bullet: B1
-    customer: SPR-9999
+    customer: SPR-1001
     turns:
       - user: "hi"
     expect: {final_outcome: ANSWERED}
 """
     write_golden(tmp_path, "cases: []\n", behavioural)
+    logins = write_logins(tmp_path, {"SPR-1001": "wrong"})
     runner = FakeRunner()
-    res = run_mod.run_suite(runner, suite="behavioural", bullet="B1", golden_dir=tmp_path)
+    res = run_mod.run_suite(
+        runner, suite="behavioural", bullet="B1", golden_dir=tmp_path, logins=logins
+    )
     [rec] = res["records"]
     assert (rec["verdict"], rec["failed_key"]) == (FAIL, "login")
     assert runner.sent == []
+
+
+def test_a_customer_with_no_demo_password_is_a_setup_error(tmp_path: Path) -> None:
+    write_golden(tmp_path, "cases: []\n", BEHAVIOURAL)
+    logins = write_logins(tmp_path, {})
+    with pytest.raises(KeyError, match="no demo password for SPR-1001"):
+        run_mod.run_suite(
+            FakeRunner(), suite="behavioural", bullet="B1", golden_dir=tmp_path, logins=logins
+        )
 
 
 def test_leaked_value_fails_and_is_redacted(tmp_path: Path) -> None:
@@ -274,6 +299,15 @@ def test_provider_error_in_a_step_up_is_na(tmp_path: Path) -> None:
     res = run(tmp_path, runner)
     bh = next(r for r in res["records"] if r["case_id"] == "BH-B1-01")
     assert bh["verdict"] == NA
+    assert len(bh["trace"]) == 3  # nothing is played after the provider error
+
+
+def test_a_provider_error_stops_the_scripted_turns(tmp_path: Path) -> None:
+    runner = FakeRunner([turn("ok"), turn(provider_error=True)])
+    res = run(tmp_path, runner)
+    bh = next(r for r in res["records"] if r["case_id"] == "BH-B1-01")
+    assert bh["verdict"] == NA
+    assert [text for _, text in runner.sent] == ["hi", "withdraw"]  # "yes" is never sent
 
 
 def test_repeat_and_scorecard(tmp_path: Path) -> None:

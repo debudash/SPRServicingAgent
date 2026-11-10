@@ -40,6 +40,7 @@ ACCOUNTS = ROOT / "problemstmt" / "spr_starter_kit" / "data" / "accounts.json"
 DEMO_LOGINS = ROOT / "data" / "demo_logins.json"  # ADR 0007: the simulated login
 RESULTS = ROOT / "evals" / "results"
 BULLET_ORDER = ("B1", "B2", "B3", "B4", "B5")
+CORRECT = "correct"  # a step-up answered with the customer's stored values
 SUITE_FILES = {"golden": "golden.yaml", "behavioural": "behavioural.yaml"}
 
 
@@ -85,9 +86,9 @@ def select(
         elif (status := case.get("status", "active")) in ("pending_data", "retired"):
             reason = status  # retired: the spec no longer describes it (#117)
         elif case.get("faults"):
-            reason = "fault injection is not available through DeskRunner yet"
+            reason = "fault injection is not available through the runner yet"
         elif any("reviewer" in t for t in case_turns(case)):
-            reason = "reviewer turns are not available through DeskRunner yet"
+            reason = "reviewer turns are not available through the runner yet"
         else:
             to_run.append(case)
             continue
@@ -98,8 +99,8 @@ def select(
 def _step_up_values(
     answer: Any, customer: str, identities: dict[str, tuple[str, str]]
 ) -> tuple[date, str]:
-    """`correct` is the customer's stored values; otherwise the case's own `{dob, last4}`."""
-    dob, last4 = identities[customer] if answer == "correct" else (answer["dob"], answer["last4"])
+    """`CORRECT` is the customer's stored values; otherwise the case's own `{dob, last4}`."""
+    dob, last4 = identities[customer] if answer == CORRECT else (answer["dob"], answer["last4"])
     return date.fromisoformat(str(dob)), str(last4)
 
 
@@ -122,7 +123,7 @@ def _play(
             result = runner.send(conversation, str(step["user"]))
         turns.append(result)
         if not result.provider_error and auto and result.step_up_required:
-            result = runner.step_up(conversation, *_step_up_values("correct", customer, identities))
+            result = runner.step_up(conversation, *_step_up_values(CORRECT, customer, identities))
             turns.append(result)
         if result.provider_error:
             break
@@ -134,13 +135,15 @@ def run_case_once(
     case: dict[str, Any],
     identities: dict[str, tuple[str, str]],
     restricted: Restricted,
-    passwords: dict[str, str] | None = None,
+    passwords: dict[str, str],
 ) -> dict[str, Any]:
     customer = case.get("customer")
     if customer is None:
         session: str | LoginRefused = runner.start(None)
+    elif str(customer) not in passwords:
+        raise KeyError(f"{case['id']}: no demo password for {customer} in the logins file")
     else:
-        session = runner.login(str(customer), (passwords or {}).get(str(customer), ""))
+        session = runner.login(str(customer), passwords[str(customer)])
     turns: list[TurnResult] = []
     key: str | None
     if isinstance(session, LoginRefused):
