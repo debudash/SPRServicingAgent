@@ -111,19 +111,24 @@ def _play(
     identities: dict[str, tuple[str, str]],
 ) -> list[TurnResult]:
     """Every turn of the case, plus each automatic step-up the desk asks for (`auto`)."""
-    customer = str(case.get("customer"))
-    auto = (case.get("session") or {}).get("step_up", "auto") == "auto"
+    customer = case.get("customer")
+    # Issue #120: str(None) made a guest the customer "None", so a step-up request from the desk
+    # looked up identities["None"] and crashed the run. Only a logged-in customer can step up; a
+    # guest's turn is scored as the desk returned it, so a desk that asks a guest fails the case.
+    auto = customer is not None and (case.get("session") or {}).get("step_up", "auto") == "auto"
     turns: list[TurnResult] = []
     for step in case_turns(case):
         if "step_up" in step:
             result = runner.step_up(
-                conversation, *_step_up_values(step["step_up"], customer, identities)
+                conversation, *_step_up_values(step["step_up"], str(customer), identities)
             )
         else:
             result = runner.send(conversation, str(step["user"]))
         turns.append(result)
         if not result.provider_error and auto and result.step_up_required:
-            result = runner.step_up(conversation, *_step_up_values(CORRECT, customer, identities))
+            result = runner.step_up(
+                conversation, *_step_up_values(CORRECT, str(customer), identities)
+            )
             turns.append(result)
         if result.provider_error:
             break

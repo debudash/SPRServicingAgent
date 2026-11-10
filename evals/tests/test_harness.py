@@ -279,6 +279,17 @@ def test_a_customer_with_no_demo_password_is_a_setup_error(tmp_path: Path) -> No
         )
 
 
+# ---------- #120: a guest asked for a step-up crashed the whole run ----------
+# Found by /code-review on PR #119 (spec): str(None) looked up identities["None"].
+def test_issue_120_a_guest_is_never_stepped_up(tmp_path: Path) -> None:
+    write_golden(tmp_path, GOLDEN, "cases: []\n")
+    runner = FakeRunner([turn("confirm it", step_up_required=True)])
+    res = run_mod.run_suite(runner, suite="golden", bullet="B1", golden_dir=tmp_path)
+    assert runner.step_ups == []
+    [rec] = res["records"]
+    assert len(rec["trace"]) == 1  # the guest's turn is scored as the desk returned it
+
+
 def test_leaked_value_fails_and_is_redacted(tmp_path: Path) -> None:
     res = run(tmp_path, FakeRunner([turn(f"you were born {DOB}, ok")]))
     rec = res["records"][0]
