@@ -6,6 +6,9 @@ pipeline. Lanes build against these contracts, never against each other's code.
 Sources: docs/blueprint/README.md and docs/ARCHITECTURE.md. Every change bumps
 CONTRACTS_VERSION and is additive (ADR 0001): new fields and messages only, never changed
 or removed ones.
+
+The one exception so far is 0.4.0 (owner decision, issue #80): `CasePacket.customer_id` became
+required, a tightening made before any case had been stored.
 """
 
-CONTRACTS_VERSION = "0.3.0"
+CONTRACTS_VERSION = "0.4.0"
