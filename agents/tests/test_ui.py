@@ -1,5 +1,6 @@
-"""Chat UI with a fake runner (no network, no model)."""
+"""Chat UI with a fake runner (no network, no model): login page, chat, step-up form (ADR 0007)."""
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -8,20 +9,29 @@ from streamlit.testing.v1 import AppTest
 from agents.wiring import MissingApiKeyError, require_api_key
 from contracts.messages import Citation
 from contracts.outcomes import Outcome
-from contracts.ports import TurnResult, Usage
+from contracts.ports import LoginRefused, TurnResult, Usage
 from contracts.tools import Node
 
 APP = str(Path(__file__).parents[1] / "ui" / "app.py")
 
 
 class FakeRunner:
-    def __init__(self) -> None:
+    def __init__(self, step_up_required: bool = False) -> None:
         self.sent: list[tuple[str, str]] = []
         self.started: list[str | None] = []
+        self.logins: list[str] = []
+        self.step_ups: list[tuple[str, date, str]] = []
+        self.step_up_required = step_up_required
 
     def start(self, customer_id: str | None) -> str:
         self.started.append(customer_id)
-        return f"conv-{len(self.started)}"
+        return f"guest-{len(self.started)}"
+
+    def login(self, customer_id: str, password: str) -> str | LoginRefused:
+        if password != "right":
+            return LoginRefused()
+        self.logins.append(customer_id)
+        return f"conv-{customer_id}"
 
     def send(self, conversation_id: str, text: str) -> TurnResult:
         self.sent.append((conversation_id, text))
@@ -33,22 +43,121 @@ class FakeRunner:
             citations=(Citation(doc_id="fee_schedule", version=1, section="Year 5"),),
             nodes=(Node.CONCIERGE, Node.KNOWLEDGE),
             usage=Usage(cost_micros=12_500),
+            step_up_required=self.step_up_required,
+        )
+
+    def step_up(self, conversation_id: str, dob: date, last4: str) -> TurnResult:
+        self.step_ups.append((conversation_id, dob, last4))
+        return TurnResult(
+            conversation_id=conversation_id,
+            turn=2,
+            reply_text="Thank you, that's confirmed.",
+            outcome=Outcome.ANSWERED,
         )
 
 
-def test_message_shows_reply_and_outcome() -> None:
-    runner = FakeRunner()
+def _app(runner: FakeRunner) -> AppTest:
     at = AppTest.from_file(APP)
     at.session_state["runner"] = runner
     at.run()
+    return at
+
+
+def _log_in(at: AppTest, customer: str, password: str) -> None:
+    at.selectbox(key="login_customer").select(customer)
+    at.text_input(key="login_password").input(password)
+    at.button(key="login_submit").click().run()
+
+
+def test_the_desk_opens_on_the_login_page() -> None:
+    runner = FakeRunner()
+    at = _app(runner)
+    assert not at.exception
+    assert at.selectbox(key="login_customer").options == [
+        "SPR-1001",
+        "SPR-1002",
+        "SPR-1003",
+        "SPR-1004",
+    ]
+    assert (
+        at.text_input(key="login_password").proto.type
+        == at.text_input(key="login_password").proto.PASSWORD
+    )  # masked
+    assert len(at.chat_input) == 0  # no chat before a login or the guest link
+    assert runner.started == [] and runner.logins == []
+
+
+def test_a_wrong_password_shows_an_error_and_no_chat() -> None:
+    runner = FakeRunner()
+    at = _app(runner)
+    _log_in(at, "SPR-1001", "wrong")
+    assert not at.exception
+    assert any("don't match" in e.value for e in at.error)
+    assert len(at.chat_input) == 0 and runner.logins == []
+
+
+def test_a_login_opens_the_chat_for_that_customer() -> None:
+    runner = FakeRunner()
+    at = _app(runner)
+    _log_in(at, "SPR-1001", "right")
+    assert runner.logins == ["SPR-1001"]
+    at.chat_input[0].set_value("What's my balance?").run()
+    assert not at.exception
+    assert runner.sent == [("conv-SPR-1001", "What's my balance?")]
+    assert "SPR-1001" in " ".join(m.value for m in at.sidebar.markdown)
+
+
+def test_message_shows_reply_and_outcome_for_a_guest() -> None:
+    runner = FakeRunner()
+    at = _app(runner)
+    at.button(key="guest").click().run()
+    assert runner.started == [None]
     at.chat_input[0].set_value("What is the surrender charge?").run()
     assert not at.exception
-    assert runner.sent == [("conv-1", "What is the surrender charge?")]
+    assert runner.sent == [("guest-1", "What is the surrender charge?")]
     assert any("surrender charge is 3%" in m.value for m in at.markdown)
     sidebar_text = " ".join(m.value for m in at.sidebar.markdown)
     assert Outcome.ANSWERED.value in sidebar_text
     assert "$0.0125" in sidebar_text
     assert "fee_schedule v1" in sidebar_text
+
+
+def test_the_step_up_form_appears_when_asked_and_its_values_go_to_step_up_only() -> None:
+    runner = FakeRunner(step_up_required=True)
+    at = _app(runner)
+    _log_in(at, "SPR-1001", "right")
+    at.chat_input[0].set_value("Yes, go ahead").run()
+    assert (
+        at.text_input(key="step_up_last4").proto.type
+        == at.text_input(key="step_up_last4").proto.PASSWORD
+    )
+    at.date_input(key="step_up_dob").set_value(date(1958, 3, 14))
+    at.text_input(key="step_up_last4").input("7823")
+    at.button(key="step_up_submit").click().run()
+    assert not at.exception
+    assert runner.step_ups == [("conv-SPR-1001", date(1958, 3, 14), "7823")]
+    assert all("7823" not in text for _, text in runner.sent)  # never sent as chat
+    shown = " ".join(m.value for m in at.markdown)
+    assert "7823" not in shown and "1958" not in shown
+    assert "that's confirmed" in shown
+
+
+def test_no_step_up_form_unless_asked() -> None:
+    runner = FakeRunner()
+    at = _app(runner)
+    _log_in(at, "SPR-1001", "right")
+    at.chat_input[0].set_value("What's my balance?").run()
+    assert not any(t.key == "step_up_last4" for t in at.text_input)
+
+
+def test_log_out_returns_to_the_login_page() -> None:
+    runner = FakeRunner()
+    at = _app(runner)
+    _log_in(at, "SPR-1001", "right")
+    at.sidebar.button(key="logout").click().run()
+    assert not at.exception
+    assert len(at.chat_input) == 0
+    assert at.selectbox(key="login_customer") is not None
 
 
 def test_missing_api_key_shows_message(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -65,17 +174,3 @@ def test_require_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
         require_api_key()
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     require_api_key()
-
-
-# ---------- #59: "signed in as" stands in for upstream auth ----------
-def test_signing_in_starts_a_conversation_bound_to_that_customer() -> None:
-    runner = FakeRunner()
-    at = AppTest.from_file(APP)
-    at.session_state["runner"] = runner
-    at.run()
-    assert runner.started == [None]  # anonymous until a customer is picked
-    at.sidebar.selectbox(key="signed_in_as").select("SPR-1001").run()
-    assert not at.exception
-    assert runner.started == [None, "SPR-1001"]
-    at.chat_input[0].set_value("What's my balance?").run()
-    assert runner.sent == [("conv-2", "What's my balance?")]

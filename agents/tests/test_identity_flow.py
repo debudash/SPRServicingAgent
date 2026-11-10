@@ -1,6 +1,9 @@
-"""Issue #59: the B2 tracer bullet end to end with scripted models and in-memory stores.
+"""Identity end to end with scripted models and in-memory stores: login, Gate A, the step-up.
 
-G-B2-01..06, BH-B2-01 and BH-B2-02 (evals/golden/), plus the review hand-offs from PR #61.
+Issue #59 built the B2 flow with the challenge typed into chat. Issue #102 (ADR 0007) moves the
+session start to a login and the challenge to a step-up form before money moves, so these tests
+follow the login flow. Each earlier regression keeps its intent: G-B2-01..06, BH-B2-01/02, #73,
+#74, #82, #84 and the review hand-offs from PR #61 and PR #72.
 """
 
 import sqlite3
@@ -13,7 +16,14 @@ from agents.nodes import identity_gate
 from agents.nodes.common import Deps, Stores, TurnContext
 from agents.nodes.knowledge import KnowledgeDraft
 from agents.runner import GraphDeskRunner
-from agents.testing import MemoryAccounts, MemoryCases, MemoryIdentity, ScriptedChatModel
+from agents.testing import (
+    MemoryAccounts,
+    MemoryCases,
+    MemoryIdentity,
+    MemoryPasswords,
+    ScriptedChatModel,
+    put_pending_confirmation,
+)
 from agents.tools.registry import ToolRegistry
 from contracts import CONTRACTS_VERSION
 from contracts.messages import (
@@ -26,7 +36,7 @@ from contracts.messages import (
     IntentKind,
 )
 from contracts.outcomes import Outcome
-from contracts.ports import AuditEvent, TurnResult
+from contracts.ports import AuditEvent, LoginDeskRunner, LoginRefused, TurnResult
 from contracts.state import ConversationState, GateResult, Session, TraceEvent, Versions
 from contracts.tools import Node, Role, Step
 
@@ -34,7 +44,14 @@ from .test_graph import FEES, FakeSearch, MemoryAudit, cited
 
 AS_OF = date(2024, 12, 1)
 CONTACT = "1-800-555-0192"
-VERIFY_TEXT = "My date of birth is 1958-03-14 and the last four of my SSN are 7823."
+RIGHT = (date(1958, 3, 14), "7823")
+WRONG = [(date(1960, 1, 1), "1111"), (date(1958, 3, 15), "7832"), (date(1958, 3, 14), "0000")]
+PASSWORDS = {
+    "SPR-1001": "margaret-demo",
+    "SPR-1002": "raymond-demo",
+    "SPR-1003": "linda-demo",
+    "SPR-1004": "thomas-demo",
+}
 
 
 def _view(cid: str, balance: int, year: int, allowance: int) -> AccountView:
@@ -56,7 +73,7 @@ VIEWS = {
     "SPR-1004": _view("SPR-1004", 21_000_000, 5, 2_100_000),
 }
 STORED = {
-    "SPR-1001": (date(1958, 3, 14), "7823"),
+    "SPR-1001": RIGHT,
     "SPR-1003": (date(1965, 7, 4), "9910"),
     "SPR-1004": (date(1952, 5, 22), "3367"),
 }
@@ -78,24 +95,81 @@ class Desk:
             views or VIEWS, trusted={"SPR-1001", "SPR-1003", "SPR-1004"}
         )
         self.identity = MemoryIdentity(STORED)
+        self.passwords = MemoryPasswords(PASSWORDS)
         self.cases = cases or MemoryCases()
         self.runner = GraphDeskRunner(
             search=self.search,
             audit=self.audit,
             models={Role.CONCIERGE: self.concierge, Role.KNOWLEDGE: ScriptedChatModel(drafts)},
             clock=lambda: AS_OF,
-            stores=Stores(accounts=self.accounts, identity=self.identity, cases=self.cases),
+            stores=Stores(
+                accounts=self.accounts,
+                identity=self.identity,
+                cases=self.cases,
+                passwords=self.passwords,
+            ),
         )
 
+    def login(self, customer: str) -> str:
+        conv = self.runner.login(customer, PASSWORDS[customer])
+        assert isinstance(conv, str)
+        self.conv = conv
+        return conv
+
     def talk(self, customer: str | None, *texts: str) -> list[TurnResult]:
-        self.conv = self.runner.start(customer)
+        """Log in as `customer` (None: a guest session), then send each text."""
+        if customer is None:
+            self.conv = self.runner.start(None)
+        else:
+            self.login(customer)
         return [self.runner.send(self.conv, t) for t in texts]
+
+    def step_ups(self, *answers: tuple[date, str]) -> list[TurnResult]:
+        """A confirmed withdrawal waiting for the step-up (#88 builds the confirm), then the
+        form submissions."""
+        put_pending_confirmation(self.runner, self.conv)
+        return [self.runner.step_up(self.conv, dob, last4) for dob, last4 in answers]
+
+    def state(self) -> ConversationState:
+        return self.runner._states[self.conv]
 
     def events(self) -> list[AuditEvent]:
         return [r.event for r in self.audit.rows]
 
+    def everything_kept(self) -> str:
+        s = self.state()
+        return " ".join(
+            [
+                s.model_dump_json(),
+                " ".join(r.model_dump_json() for r in self.audit.rows),
+                " ".join(p.model_dump_json() for p in self.cases.opened),
+                " ".join(str(m.content) for call in self.concierge.calls for m in call),
+            ]
+        )
 
-# ---------- G-B2-01: untrusted account, never challenged (GR-14) ----------
+
+def test_the_runner_is_a_login_runner() -> None:
+    runner: LoginDeskRunner = Desk().runner
+    assert runner
+
+
+# ---------- the login (ADR 0007) ----------
+def test_a_wrong_password_is_refused_and_opens_nothing() -> None:
+    desk = Desk()
+    before = dict(desk.runner._states)
+    for customer, password in [("SPR-1001", "wrong"), ("SPR-9999", "x"), ("SPR-1001", "")]:
+        assert desk.runner.login(customer, password) == LoginRefused()
+    assert desk.runner._states == before
+
+
+def test_a_login_binds_the_customer_and_marks_the_session_authenticated() -> None:
+    desk = Desk()
+    desk.login("SPR-1001")
+    s = desk.state().session
+    assert s.customer_id == "SPR-1001" and s.authenticated and not s.gate_b_passed
+
+
+# ---------- G-B2-01: Raymond logs in, and Gate A still turns him away (GR-14) ----------
 def test_g_b2_01_untrusted_account_gets_the_contact_number_and_no_challenge() -> None:
     desk = Desk(IntentKind.ACCOUNT_INFO)
     [r] = desk.talk("SPR-1002", "What's my current balance?")
@@ -106,60 +180,49 @@ def test_g_b2_01_untrusted_account_gets_the_contact_number_and_no_challenge() ->
     assert "42,100" not in r.reply_text
     assert desk.identity.checks == 0 and desk.accounts.viewed == []
     assert AuditEvent.GATE_A_REFUSED in desk.events()
-    assert desk.runner._states[desk.conv].session.gate_a_trusted is False
+    assert desk.state().session.gate_a_trusted is False
+    assert not r.step_up_required
 
 
-# ---------- G-B2-02: trusted, not verified yet: ask, do not count ----------
-def test_g_b2_02_trusted_account_is_asked_to_verify() -> None:
+# ---------- G-B2-02 / BH-B2-02: logged in and trusted, so the balance with no challenge ----------
+def test_bh_b2_02_login_then_balance() -> None:
     desk = Desk(IntentKind.ACCOUNT_INFO)
-    [r] = desk.talk("SPR-1001", "What's my current balance?")
-    assert r.outcome is Outcome.NOT_PERMITTED
-    assert "date of birth" in r.reply_text.lower() and "last four" in r.reply_text.lower()
-    assert Step.GET_ACCOUNT not in r.steps and "87,450.62" not in r.reply_text
-    session = desk.runner._states[desk.conv].session
-    assert session.gate_a_trusted and not session.gate_b_passed and session.failed_attempts == 0
-
-
-# ---------- BH-B2-02: ask, then verify, then the balance ----------
-def test_bh_b2_02_verification_then_balance() -> None:
-    desk = Desk(IntentKind.ACCOUNT_INFO, IntentKind.VERIFY)
-    first, second = desk.talk(
-        "SPR-1001", "What's my balance?", "1958-03-14, and the last four are 7823."
-    )
-    assert first.outcome is Outcome.NOT_PERMITTED
-    assert second.outcome is Outcome.ANSWERED
-    assert second.steps == (Step.VERIFY_IDENTITY, Step.GET_ACCOUNT)
-    assert "$87,450.62" in second.reply_text
-    assert second.nodes == (
+    [r] = desk.talk("SPR-1001", "What's my balance?")
+    assert r.outcome is Outcome.ANSWERED
+    assert r.steps == (Step.GET_ACCOUNT,)
+    assert "$87,450.62" in r.reply_text
+    assert r.nodes == (
         Node.INTAKE,
         Node.CONCIERGE,
         Node.IDENTITY_GATE,
         Node.ACCOUNT,
         Node.RESPOND,
     )
-    assert AuditEvent.GATE_B_PASSED in desk.events()
-    trace = desk.runner._states[desk.conv].trace
-    assert TraceEvent(turn=2, node=Node.IDENTITY_GATE, step=Step.VERIFY_IDENTITY) in trace
-    assert TraceEvent(turn=2, node=Node.ACCOUNT, step=Step.GET_ACCOUNT) in trace
+    assert desk.identity.checks == 0
+    assert desk.state().trace[-1:] == [TraceEvent(turn=1, node=Node.ACCOUNT, step=Step.GET_ACCOUNT)]
+    assert not r.step_up_required
 
 
-# ---------- G-B2-03: verified on an earlier turn ----------
-def test_g_b2_03_verified_customer_gets_the_balance_without_a_new_check() -> None:
-    desk = Desk(IntentKind.VERIFY, IntentKind.ACCOUNT_INFO)
-    _, r = desk.talk("SPR-1001", VERIFY_TEXT, "What's my current balance?")
-    assert r.outcome is Outcome.ANSWERED
-    assert r.steps == (Step.GET_ACCOUNT,)
-    assert "87,450.62" in r.reply_text
-    assert desk.identity.checks == 1
+def test_g_b2_02_nothing_ever_asks_for_credentials_in_chat() -> None:
+    desk = Desk(IntentKind.ACCOUNT_INFO, IntentKind.VERIFY)
+    for r in desk.talk("SPR-1001", "What's my balance?", "I'd like to verify my identity"):
+        assert "date of birth" not in r.reply_text.lower()
+        assert "last four" not in r.reply_text.lower()
+
+
+# ---------- G-B2-03: later account turns need no new check ----------
+def test_g_b2_03_logged_in_customer_gets_the_balance_again_without_a_check() -> None:
+    desk = Desk(IntentKind.ACCOUNT_INFO, IntentKind.ACCOUNT_INFO)
+    _, r = desk.talk("SPR-1001", "What's my balance?", "And my balance now?")
+    assert r.outcome is Outcome.ANSWERED and r.steps == (Step.GET_ACCOUNT,)
+    assert desk.identity.checks == 0
 
 
 # ---------- G-B2-04: the owner asking for their own restricted fields (NG-08) ----------
 def test_g_b2_04_restricted_fields_are_never_read_back() -> None:
-    desk = Desk(IntentKind.VERIFY, IntentKind.RESTRICTED_INFO)
-    _, r = desk.talk(
-        "SPR-1001",
-        VERIFY_TEXT,
-        "Can you read me back the SSN and date of birth you have on file for me?",
+    desk = Desk(IntentKind.RESTRICTED_INFO)
+    [r] = desk.talk(
+        "SPR-1001", "Can you read me back the SSN and date of birth you have on file for me?"
     )
     assert r.outcome is Outcome.NOT_PERMITTED
     for leaked in ("7823", "1958-03-14", "03/14/1958"):
@@ -169,10 +232,8 @@ def test_g_b2_04_restricted_fields_are_never_read_back() -> None:
 
 # ---------- G-B2-05: another customer's account (NG-05) ----------
 def test_g_b2_05_another_account_gets_nothing() -> None:
-    desk = Desk(IntentKind.VERIFY, IntentKind.OTHER_ACCOUNT)
-    _, r = desk.talk(
-        "SPR-1001", VERIFY_TEXT, "Also, what's the balance on account SPR-1004? It's my brother's."
-    )
+    desk = Desk(IntentKind.OTHER_ACCOUNT)
+    [r] = desk.talk("SPR-1001", "What's the balance on account SPR-1004? It's my brother's.")
     assert r.outcome is Outcome.NOT_PERMITTED
     assert "210,000" not in r.reply_text
     assert "SPR-1004" not in desk.accounts.viewed
@@ -187,7 +248,6 @@ def test_g_b2_06_third_party_opens_a_case() -> None:
     )
     assert r.outcome is Outcome.NEEDS_HUMAN
     assert r.steps == (Step.CREATE_CASE,)
-    assert Step.GET_ACCOUNT not in r.steps and Step.QUOTE not in r.steps
     assert "11,200" not in r.reply_text
     [packet] = desk.cases.opened
     assert packet.opened_for is CaseReason.THIRD_PARTY and packet.customer_id == "SPR-1003"
@@ -197,94 +257,125 @@ def test_g_b2_06_third_party_opens_a_case() -> None:
     assert [row.case_id for row in case_rows] == [packet.case_id]
 
 
-# ---------- BH-B2-01: three failures lock the session and open a case (D-08) ----------
+# ---------- the step-up (ADR 0007): the form's values, never chat text ----------
+def test_a_passed_step_up_is_recorded_and_its_values_kept_nowhere() -> None:
+    desk = Desk()
+    desk.login("SPR-1001")
+    [r] = desk.step_ups(RIGHT)
+    assert r.outcome is Outcome.ANSWERED and r.steps == (Step.VERIFY_IDENTITY,)
+    assert r.nodes == (Node.INTAKE, Node.IDENTITY_GATE, Node.RESPOND)  # no model sees it
+    assert desk.state().session.gate_b_passed and not r.step_up_required
+    assert AuditEvent.GATE_B_PASSED in desk.events()
+    assert desk.concierge.calls == []
+    kept = desk.everything_kept()
+    for value in ("7823", "1958-03-14", "1958"):
+        assert value not in kept
+
+
+def test_a_failed_step_up_says_so_counts_and_asks_for_the_form_again() -> None:
+    desk = Desk()
+    desk.login("SPR-1001")
+    [r] = desk.step_ups(WRONG[0])
+    assert r.outcome is Outcome.NOT_PERMITTED and r.steps == (Step.VERIFY_IDENTITY,)
+    assert "don't match" in r.reply_text and "2 more tries" in r.reply_text
+    assert "date of birth" not in r.reply_text.lower()  # the form asks, not the chat
+    assert desk.state().session.failed_attempts == 1
+    assert r.step_up_required  # the UI shows the form again
+
+
+def test_a_step_up_with_nothing_pending_counts_nothing() -> None:
+    desk = Desk()
+    desk.login("SPR-1001")
+    r = desk.runner.step_up(desk.conv, *WRONG[0])
+    assert r.outcome is Outcome.NOT_PERMITTED
+    assert desk.identity.checks == 0 and desk.state().session.failed_attempts == 0
+    assert not r.step_up_required
+    assert desk.audit.rows[-1].event is AuditEvent.REFUSED  # every turn writes its audit row
+
+
+def test_a_guest_cannot_step_up() -> None:
+    desk = Desk()
+    desk.talk(None)
+    r = desk.runner.step_up(desk.conv, *RIGHT)
+    assert r.outcome is Outcome.NOT_PERMITTED and desk.identity.checks == 0
+
+
+# ---------- BH-B2-01: three failed step-ups lock the session and open a case (D-08) ----------
 def test_bh_b2_01_three_failures_lock_and_the_right_answer_no_longer_unlocks() -> None:
-    desk = Desk(
-        IntentKind.ACCOUNT_INFO,
-        IntentKind.VERIFY,
-        IntentKind.VERIFY,
-        IntentKind.VERIFY,
-        IntentKind.ACCOUNT_INFO,
-    )
-    turns = desk.talk(
-        "SPR-1001",
-        "What's my balance?",
-        "My date of birth is 1960-01-01 and my last four are 1111.",
-        "Sorry, 1958-03-15 and 7832.",
-        "OK, 1958-03-14 and 0000.",
-        "Fine: 1958-03-14 and 7823. Now what's my balance?",
-    )
-    assert [t.outcome for t in turns] == [Outcome.NOT_PERMITTED] * 5
-    assert desk.identity.checks == 3  # the locked fifth turn is never checked
-    locking = turns[3]
+    desk = Desk(IntentKind.ACCOUNT_INFO)
+    desk.login("SPR-1001")
+    turns = desk.step_ups(*WRONG, RIGHT)
+    assert [t.outcome for t in turns] == [Outcome.NOT_PERMITTED] * 4
+    assert desk.identity.checks == 3  # the locked fourth try is never checked
+    locking = turns[2]
     assert Step.CREATE_CASE in locking.steps
     [packet] = desk.cases.opened
     assert packet.opened_for is CaseReason.LOCKED and locking.reference == packet.case_id
-    assert all("87,450.62" not in t.reply_text for t in turns)
-    assert Step.GET_ACCOUNT not in turns[4].steps
     events = desk.events()
     assert events.count(AuditEvent.GATE_B_FAILED) == 3
     assert AuditEvent.LOCKED in events and AuditEvent.CASE_OPENED in events
-    for digits in ("7823", "7832", "1111", "1958", "1960"):
-        assert digits not in packet.model_dump_json()
-    assert desk.runner._states[desk.conv].session.locked
+    assert desk.state().session.locked and not desk.state().session.gate_b_passed
+    assert not turns[3].step_up_required
+    for digits in ("7823", "7832", "1111", "0000", "1958", "1960"):
+        assert digits not in desk.everything_kept()
+    # Locked: the account is shut for the session too (FR-04, #107).
+    after = desk.runner.send(desk.conv, "What's my balance?")
+    assert after.outcome is Outcome.NOT_PERMITTED and "87,450.62" not in after.reply_text
+    assert Step.GET_ACCOUNT not in after.steps
 
 
-def test_a_failed_attempt_says_so_and_is_counted() -> None:
+# ---------- credentials typed into chat are masked and never checked (ADR 0007) ----------
+def test_credentials_typed_in_chat_are_never_checked() -> None:
     desk = Desk(IntentKind.VERIFY)
-    [r] = desk.talk("SPR-1001", "1958-03-15 and 7832")
-    assert r.outcome is Outcome.NOT_PERMITTED and r.steps == (Step.VERIFY_IDENTITY,)
-    assert desk.runner._states[desk.conv].session.failed_attempts == 1
+    [r] = desk.talk("SPR-1001", "My date of birth is 1958-03-14 and the last four are 7823.")
+    assert desk.identity.checks == 0 and Step.VERIFY_IDENTITY not in r.steps
+    assert not desk.state().session.gate_b_passed
+    for value in ("7823", "1958-03-14"):
+        assert value not in desk.everything_kept()
 
 
-# ---------- ADR 0005: no usable candidates asks again and is not counted ----------
-def test_partial_credentials_ask_again_uncounted() -> None:
-    desk = Desk(IntentKind.VERIFY)
-    [r] = desk.talk("SPR-1001", "My date of birth is 1958-03-14.")
-    assert r.outcome is Outcome.NOT_PERMITTED
-    assert "last four" in r.reply_text.lower()
-    assert desk.identity.checks == 0
-    assert desk.runner._states[desk.conv].session.failed_attempts == 0
-
-
-def test_complete_credentials_are_checked_whatever_the_model_called_the_turn() -> None:
-    # Routing is code (ADR 0003): a full set of candidates goes to the gate even if the
-    # Concierge mislabels the turn, so the customer is not asked again for what they just gave.
-    desk = Desk(IntentKind.OTHER)
-    [r] = desk.talk("SPR-1001", "1958-03-14 7823")
-    assert desk.identity.checks == 1 and r.steps[0] is Step.VERIFY_IDENTITY
-
-
-def test_anonymous_session_is_not_challenged() -> None:
+def test_a_guest_asking_about_an_account_is_told_to_log_in() -> None:
     desk = Desk(IntentKind.ACCOUNT_INFO)
     [r] = desk.talk(None, "What's my balance?")
     assert r.outcome is Outcome.NOT_PERMITTED
-    assert "date of birth" not in r.reply_text.lower()
-    assert desk.identity.checks == 0
+    assert "log in" in r.reply_text.lower() and "date of birth" not in r.reply_text.lower()
+    assert desk.identity.checks == 0 and desk.accounts.viewed == []
+
+
+def test_a_bound_session_that_never_logged_in_gets_no_account() -> None:
+    # start(customer_id) remains until contracts 0.7.0 (#105); it is not a login.
+    desk = Desk(IntentKind.ACCOUNT_INFO)
+    desk.conv = desk.runner.start("SPR-1001")
+    r = desk.runner.send(desk.conv, "What's my balance?")
+    assert r.outcome is Outcome.NOT_PERMITTED and "log in" in r.reply_text.lower()
+    assert desk.accounts.viewed == []
 
 
 # ---------- hand-offs from the review of PR #61 ----------
 def test_gate_and_account_view_do_not_outlive_their_turn() -> None:
-    desk = Desk(IntentKind.VERIFY, IntentKind.OUT_OF_SCOPE)
-    first, _ = desk.talk("SPR-1001", VERIFY_TEXT, "Should I buy bitcoin instead?")
+    desk = Desk(IntentKind.ACCOUNT_INFO, IntentKind.OUT_OF_SCOPE)
+    first, _ = desk.talk("SPR-1001", "What's my balance?", "Should I buy bitcoin instead?")
     assert first.outcome is Outcome.ANSWERED
-    state = desk.runner._states[desk.conv]
+    state = desk.state()
     assert state.gate is None and state.account_view is None and state.case_packet is None
-    assert state.session.gate_b_passed  # the session, unlike the per-turn fields, persists
+    assert state.session.authenticated  # the session, unlike the per-turn fields, persists
 
 
 def test_gate_result_is_recorded_with_its_session() -> None:
-    desk = Desk(IntentKind.VERIFY)
-    desk.talk("SPR-1001", VERIFY_TEXT)
-    state = desk.runner._states[desk.conv]
+    desk = Desk(IntentKind.ACCOUNT_INFO)
+    desk.talk("SPR-1001", "What's my balance?")
+    state = desk.state()
+    assert state.gate is GateResult.LOGGED_IN and state.session.authenticated
+    desk.step_ups(RIGHT)
+    state = desk.state()
     assert state.gate is GateResult.PASSED and state.session.gate_b_passed
 
 
 def test_a_state_validation_error_fails_closed_as_a_contract_violation() -> None:
     # A store bug that hands back another customer's view must not reach the customer: the
     # state refuses it (NG-05) and the turn ends UNAVAILABLE, not as a provider error.
-    desk = Desk(IntentKind.VERIFY, views={**VIEWS, "SPR-1001": VIEWS["SPR-1004"]})
-    [r] = desk.talk("SPR-1001", VERIFY_TEXT)
+    desk = Desk(IntentKind.ACCOUNT_INFO, views={**VIEWS, "SPR-1001": VIEWS["SPR-1004"]})
+    [r] = desk.talk("SPR-1001", "What's my balance?")
     assert r.outcome is Outcome.UNAVAILABLE
     assert not r.provider_error
     assert "210,000" not in r.reply_text
@@ -298,83 +389,77 @@ class BrokenCases(MemoryCases):
 
 
 def test_issue_73_lock_holds_when_the_case_store_fails() -> None:
-    desk = Desk(*[IntentKind.VERIFY] * 4, cases=BrokenCases())
-    turns = desk.talk(
-        "SPR-1001",
-        "1960-01-01 and 1111",
-        "1958-03-15 and 7832",
-        "1958-03-14 and 0000",
-        VERIFY_TEXT,
-    )
-    session = desk.runner._states[desk.conv].session
+    desk = Desk(cases=BrokenCases())
+    desk.login("SPR-1001")
+    turns = desk.step_ups(*WRONG, RIGHT)
+    session = desk.state().session
     assert session.locked and session.failed_attempts == 3
     assert desk.identity.checks == 3  # the right answer after the lock is never checked
     locking = turns[2]
     assert not locking.provider_error
     assert locking.outcome is Outcome.NOT_PERMITTED
     assert CONTACT in locking.reply_text and "case" in locking.reply_text.lower()
-    assert turns[3].outcome is Outcome.NOT_PERMITTED and "87,450.62" not in turns[3].reply_text
+    assert turns[3].outcome is Outcome.NOT_PERMITTED and not session.gate_b_passed
 
 
 # ---------- #74: credentials in a turn swallowed the customer's actual request ----------
 # Found by /code-review on PR #72 (spec). GR-20: the outcome is about what the customer asked.
+# Since ADR 0007 typed credentials are masked and ignored, so the request always stands alone.
 MIXED = "DOB 1958-03-14, last four of SSN 7823. Is the year 5 surrender charge 4%?"
 
 
 def test_issue_74_credentials_with_a_product_question_get_the_answer() -> None:
     desk = Desk(IntentKind.PRODUCT_QUESTION, drafts=(cited(FEES, "Year 5 is 3%."),))
     [r] = desk.talk("SPR-1001", MIXED)
-    assert desk.identity.checks == 1  # the credentials were still checked
-    assert r.steps == (Step.VERIFY_IDENTITY, Step.SEARCH_KB)
+    assert r.steps == (Step.SEARCH_KB,)
     assert r.outcome is Outcome.ANSWERED and "3%" in r.reply_text
-    assert desk.runner._states[desk.conv].session.gate_b_passed
-
-
-def test_issue_74_anonymous_credentials_with_a_product_question_get_the_answer() -> None:
-    desk = Desk(IntentKind.PRODUCT_QUESTION, drafts=(cited(FEES, "Year 5 is 3%."),))
-    [r] = desk.talk(None, MIXED)
-    assert r.outcome is Outcome.ANSWERED and "3%" in r.reply_text
-    assert "sign in" not in r.reply_text.lower()
     assert desk.identity.checks == 0
 
 
-@pytest.mark.parametrize("verified_first", [False, True])
-def test_issue_74_credentials_with_an_unbuilt_request_are_never_answered(
-    verified_first: bool,
-) -> None:
-    kinds = [IntentKind.VERIFY] * verified_first + [IntentKind.WITHDRAWAL]
-    desk = Desk(*kinds)
-    texts = [VERIFY_TEXT] * verified_first + ["1958-03-14 and 7823, withdraw $2,000 please"]
-    r = desk.talk("SPR-1001", *texts)[-1]
+def test_issue_74_guest_credentials_with_a_product_question_get_the_answer() -> None:
+    desk = Desk(IntentKind.PRODUCT_QUESTION, drafts=(cited(FEES, "Year 5 is 3%."),))
+    [r] = desk.talk(None, MIXED)
+    assert r.outcome is Outcome.ANSWERED and "3%" in r.reply_text
+    assert "log in" not in r.reply_text.lower()
+    assert desk.identity.checks == 0
+
+
+def test_issue_74_credentials_with_an_unbuilt_request_are_never_answered() -> None:
+    desk = Desk(IntentKind.WITHDRAWAL)
+    [r] = desk.talk("SPR-1001", "1958-03-14 and 7823, withdraw $2,000 please")
     assert r.outcome is Outcome.NOT_PERMITTED
     assert "yet" in r.reply_text
 
 
-def test_issue_74_a_failed_challenge_is_still_reported_on_a_product_turn() -> None:
-    desk = Desk(IntentKind.PRODUCT_QUESTION, drafts=(cited(FEES, "Year 5 is 3%."),))
-    [r] = desk.talk("SPR-1001", "DOB 1958-03-15, SSN last four 7832. Is year 5 4%?")
-    assert desk.runner._states[desk.conv].session.failed_attempts == 1
-    assert "don't match" in r.reply_text and "3%" in r.reply_text
-
-
 # ---------- review follow-ups on PR #72 ----------
 def test_the_lock_case_excerpt_covers_the_conversation_masked() -> None:
-    desk = Desk(*[IntentKind.VERIFY] * 3)
-    desk.talk("SPR-1001", "1960-01-01 and 1111", "1958-03-15 and 7832", "1958-03-14 and 0000")
+    desk = Desk(IntentKind.PRODUCT_QUESTION, drafts=(cited(FEES, "Year 5 is 3%."),))
+    desk.talk("SPR-1001", "My dob is 1958-03-14, is year 5 4%?")
+    desk.step_ups(*WRONG)
     [packet] = desk.cases.opened
-    assert packet.excerpt.count("[DOB]") == 3 and packet.excerpt.count("[SSN-4]") == 3
+    assert "[DOB]" in packet.excerpt and "1958" not in packet.excerpt
+    assert "identity check submitted" in packet.excerpt  # the form, never its values
 
 
 @pytest.mark.parametrize(
     "session",
     [
-        Session(customer_id="SPR-1002"),  # untrusted
-        Session(customer_id="SPR-1001", gate_a_trusted=True, failed_attempts=3, locked=True),
-        Session(customer_id="SPR-1001", gate_a_trusted=True, gate_b_passed=True),
+        Session(customer_id="SPR-1002", authenticated=True),  # untrusted
+        Session(
+            customer_id="SPR-1001",
+            gate_a_trusted=True,
+            authenticated=True,
+            failed_attempts=3,
+            locked=True,
+        ),
+        Session(
+            customer_id="SPR-1001", gate_a_trusted=True, authenticated=True, gate_b_passed=True
+        ),
+        Session(customer_id="SPR-1001", gate_a_trusted=True, authenticated=True),  # not a step-up
     ],
 )
 def test_credentials_are_dropped_on_every_gate_path(session: Session) -> None:
-    turn = TurnContext(credentials=Credentials(dob=date(1958, 3, 14), last4="7823"))
+    turn = TurnContext(credentials=Credentials(dob=RIGHT[0], last4=RIGHT[1]))
     desk = Desk()
     deps = Deps(
         audit=desk.audit,
@@ -395,6 +480,28 @@ def test_credentials_are_dropped_on_every_gate_path(session: Session) -> None:
     )
     identity_gate.make(deps)(state)
     assert turn.credentials is None and desk.identity.checks == 0
+
+
+def test_logged_in_is_the_gate_for_a_login_without_a_step_up() -> None:
+    desk = Desk()
+    deps = Deps(
+        audit=desk.audit,
+        registry=ToolRegistry(),
+        models={},
+        model_names={},
+        clock=lambda: AS_OF,
+        turn=TurnContext(),
+        accounts=desk.accounts,
+        identity=desk.identity,
+        cases=desk.cases,
+    )
+    state = ConversationState(
+        conversation_id="CV1",
+        as_of=AS_OF,
+        session=Session(customer_id="SPR-1001", gate_a_trusted=True, authenticated=True),
+        versions=Versions(contracts=CONTRACTS_VERSION),
+    )
+    assert identity_gate.make(deps)(state) == {"gate": GateResult.LOGGED_IN}
 
 
 # ---------- #82: FR-03 at the start, and no case without a customer (owner decisions) ----------
@@ -422,7 +529,7 @@ def test_issue_82_trusted_customer_gets_no_notice() -> None:
     assert CONTACT not in r.reply_text
 
 
-def test_issue_82_anonymous_third_party_gets_no_case() -> None:
+def test_issue_82_guest_third_party_gets_no_case() -> None:
     desk = Desk(IntentKind.THIRD_PARTY)
     [r] = desk.talk(None, "I handle my mum's finances. What's her balance?")
     assert r.outcome is Outcome.NOT_PERMITTED

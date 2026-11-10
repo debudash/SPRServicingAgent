@@ -12,7 +12,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable, RunnableLambda
 from pydantic import PrivateAttr
 
-from contracts.messages import AccountView, CasePacket
+from contracts.messages import AccountView, CasePacket, Confirmation
 
 
 class ScriptedChatModel(BaseChatModel):
@@ -110,3 +110,29 @@ class MemoryCases:
         if any(p.case_id == packet.case_id for p in self.opened):
             raise ValueError(f"duplicate case {packet.case_id}")
         self.opened.append(packet)
+
+
+class MemoryPasswords:
+    """`PasswordCheck` over fixed passwords (ADR 0007). Records only how often it was called."""
+
+    def __init__(self, passwords: dict[str, str]) -> None:
+        self._passwords = passwords
+        self.checks = 0
+
+    def check_password(self, customer_id: str, password: str) -> bool:
+        self.checks += 1
+        return bool(password) and self._passwords.get(customer_id) == password
+
+
+def put_pending_confirmation(runner: Any, conversation_id: str) -> None:
+    """Stand in for the confirm node (#88): the customer has said yes to a quote, so a step-up
+    is pending (`contracts.state.step_up_pending`). Test-only: it writes the runner's state
+    directly."""
+    state = runner._states[conversation_id]
+    runner._states[conversation_id] = state.model_copy(
+        update={
+            "confirmation": Confirmation(
+                proposal_id="P-TEST", amount_cents=345_600, turn=max(state.turn, 1) + 1
+            )
+        }
+    )

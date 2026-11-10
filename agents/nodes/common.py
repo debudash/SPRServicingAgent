@@ -12,14 +12,14 @@ from pydantic import BaseModel
 from agents.guards.credentials import Credentials
 from agents.tools.registry import ToolRegistry
 from contracts.messages import IntentKind
-from contracts.ports import AccountStore, AuditLog, CaseStore, IdentityCheck, Usage
+from contracts.ports import AccountStore, AuditLog, CaseStore, IdentityCheck, PasswordCheck, Usage
 from contracts.state import MAX_TOOL_CALLS_PER_TURN, ConversationState
 from contracts.tools import Node, Role, Step
 
 NodeFn = Callable[[ConversationState], dict[str, Any]]
 
-# Intents answered from the account, so both gates must hold first (FR-02). Routing and respond
-# share this one set.
+# Intents answered from the account, so a login and Gate A must hold first (FR-02, ADR 0007).
+# Routing and respond share this one set.
 ACCOUNT_INTENTS = frozenset({IntentKind.ACCOUNT_INFO, IntentKind.VERIFY})
 
 
@@ -45,9 +45,11 @@ class TurnContext:
     output_tokens: int = 0
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
-    # This turn's credential candidates (ADR 0005). Held here, outside ConversationState, so they
-    # never reach a checkpoint or trace; read only by identity_gate.
+    # The step-up form's values (ADR 0007), set only by the runner's `step_up`. Held here, outside
+    # ConversationState, so they never reach a checkpoint or trace; read only by identity_gate.
     credentials: Credentials | None = field(default=None, repr=False)
+    # This turn is the step-up form, not a chat message: it skips the Concierge (no text to read).
+    step_up: bool = False
 
     def record(self, node: Node, step: Step) -> None:
         self.steps.append(step)
@@ -69,12 +71,14 @@ class TurnContext:
 
 @dataclass(frozen=True)
 class Stores:
-    """The B2 records the desk reads and writes: accounts (Gate A, views), the identity check
-    (Gate B) and cases. Built together by the wiring, passed together to the runner."""
+    """The records the desk reads and writes: accounts (Gate A, views), the identity check (the
+    step-up), cases and the login's passwords. Built together by the wiring, passed together to
+    the runner."""
 
     accounts: AccountStore
     identity: IdentityCheck
     cases: CaseStore
+    passwords: PasswordCheck
 
 
 @dataclass
@@ -122,13 +126,15 @@ def session_context(state: ConversationState) -> str:
     """Session facts safe for a model and stable across conversations: no IDs, no dates."""
     s = state.session
     if s.customer_id is None:
-        who = "anonymous"
+        who = "guest, not logged in"
+    elif not s.authenticated:
+        who = "bound to a customer who has not logged in"
     elif s.locked:
-        who = "bound to a customer; identity checks locked"
+        who = "logged in; identity checks locked"
     elif s.gate_b_passed:
-        who = "bound to a customer; identity verified"
+        who = "logged in; step-up check passed"
     else:
-        who = "bound to a customer; identity not yet verified"
+        who = "logged in"
     return f"Session: {who}. Customer turn {state.turn}."
 
 

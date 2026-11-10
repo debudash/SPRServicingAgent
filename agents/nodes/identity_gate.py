@@ -1,9 +1,11 @@
-"""identity_gate (code): Gate A, then the Gate B challenge (ARCHITECTURE 3.2, ADR 0005).
+"""identity_gate (code): Gate A, the login, and the step-up check (ARCHITECTURE 3.2, ADR 0007).
 
-No model is involved. The candidates come from the per-turn context, where the runner put them
-after masking the turn; they go to `IdentityCheck.check_challenge` and nowhere else. The decision is
-written together with the session fields it depends on, in one update, because the state checks the
-two against each other (issue #62).
+No model is involved. A chat turn about the account is let through on a login and Gate A
+(LOGGED_IN). The challenge runs only on a step-up turn: its values come from the step-up form,
+which the runner put in the per-turn context, and go to `IdentityCheck.check_challenge` and nowhere
+else. Credentials typed into chat are masked by the runner and never reach this node (ADR 0007).
+The decision is written together with the session fields it depends on, in one update, because
+the state checks the two against each other (issue #62).
 """
 
 from typing import Any
@@ -27,8 +29,7 @@ def make(deps: Deps) -> NodeFn:
 
     def identity_gate(state: ConversationState) -> dict[str, Any]:
         s = state.session
-        # Used at most once, then dropped on every path (review on PR #72: only the challenge
-        # path dropped them).
+        # Used at most once, then dropped on every path (review on PR #72).
         creds, deps.turn.credentials = deps.turn.credentials, None
         if s.customer_id is None:
             return {"gate": GateResult.NO_CUSTOMER}
@@ -39,10 +40,12 @@ def make(deps: Deps) -> NodeFn:
             return {"gate": GateResult.LOCKED}
         if s.gate_b_passed:
             return {"gate": GateResult.VERIFIED}
+        if not (deps.turn.step_up and s.authenticated and creds is not None and creds.complete):
+            # A chat turn: the login is enough for the account (ADR 0007). A session bound
+            # without a login (DeskRunner.start, until contracts 0.7.0) gets ASK: log in first.
+            return {"gate": GateResult.LOGGED_IN if s.authenticated else GateResult.ASK}
 
-        if creds is None or creds.dob is None or creds.last4 is None:
-            return {"gate": GateResult.ASK}  # ADR 0005: nothing usable is not an attempt
-
+        assert creds.dob is not None and creds.last4 is not None  # complete, checked above
         deps.turn.record(Node.IDENTITY_GATE, Step.VERIFY_IDENTITY)
         if deps.identity.check_challenge(s.customer_id, creds.dob, creds.last4):
             audit(state, AuditEvent.GATE_B_PASSED, s.failed_attempts)
