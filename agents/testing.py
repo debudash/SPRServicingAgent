@@ -20,8 +20,10 @@ from contracts.messages import (
     ProposalStatus,
     Quote,
     QuoteRefusal,
+    ThresholdTier,
     check_confirmation,
     check_transition,
+    proposal_hash,
 )
 
 
@@ -178,14 +180,35 @@ class MemoryProposals:
 
 
 def put_pending_confirmation(runner: Any, conversation_id: str) -> None:
-    """Stand in for the confirm node (#88): the customer has said yes to a quote, so a step-up
-    is pending (`contracts.state.step_up_pending`). Test-only: it writes the runner's state
-    directly."""
+    """Stand in for a quote and its yes (#88), so a step-up is pending. Test-only: it saves and
+    confirms a proposal in the runner's store, which decides whether the yes still stands
+    (#131), and writes the runner's state directly."""
     state = runner._states[conversation_id]
+    customer = state.session.customer_id or "SPR-TEST"
+    quote = Quote(
+        amount_cents=345_600,
+        free_cents=0,
+        excess_cents=345_600,
+        rate_bp=0,
+        charge_cents=0,
+        net_cents=345_600,
+        contract_year=7,
+        threshold_tier=ThresholdTier.SELF_SERVICE,
+        irs_notice=False,
+    )
+    quoted_turn = max(state.turn, 1)
+    proposal = Proposal(
+        proposal_id=f"P-TEST-{conversation_id}",
+        conversation_id=conversation_id,
+        customer_id=customer,
+        quote=quote,
+        as_of=state.as_of,
+        quoted_turn=quoted_turn,
+        hash=proposal_hash(customer, quote, state.as_of),
+    )
+    yes = Confirmation(proposal_id=proposal.proposal_id, amount_cents=345_600, turn=quoted_turn + 1)
+    runner._stores.proposals.save(proposal)
+    runner._stores.proposals.confirm(yes, conversation_id)
     runner._states[conversation_id] = state.model_copy(
-        update={
-            "confirmation": Confirmation(
-                proposal_id="P-TEST", amount_cents=345_600, turn=max(state.turn, 1) + 1
-            )
-        }
+        update={"proposal": proposal, "confirmation": yes}
     )

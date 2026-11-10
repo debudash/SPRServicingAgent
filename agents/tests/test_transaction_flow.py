@@ -18,7 +18,7 @@ from agents.wiring import build_stores, open_desk_db
 from contracts.messages import Intent, IntentKind, ProposalStatus
 from contracts.outcomes import Outcome
 from contracts.ports import AuditEvent, TurnResult
-from contracts.tools import Node, Role, Step
+from contracts.tools import Node, Role, Step, ToolName
 
 from .test_graph import FakeSearch, MemoryAudit
 
@@ -264,3 +264,44 @@ def test_issue_130_a_bare_yes_after_a_refused_amount_confirms_nothing(tmp_path: 
     assert desk.status(first) is ProposalStatus.VOIDED  # GR-17: not a yes to the $5,000
     assert not r.step_up_required
     assert "no quote" in r.reply_text
+
+
+# ---------- #131: the step-up could be pending for a voided proposal ----------
+# Found by /code-review on PR #129 (spec): step_up_pending read only the state's yes, and a turn
+# that failed between voiding the old quote and clearing its yes left the two disagreeing.
+def _confirmed_5000(tmp_path: Path) -> tuple[Desk, str]:
+    desk = Desk(tmp_path, withdraw(5_000), confirm(5_000), withdraw(3_000)).login("SPR-1001")
+    desk.say("Withdraw $5,000.")
+    first, _ = desk.proposal()
+    assert desk.say("Yes, go ahead with $5,000.").step_up_required
+    return desk, first
+
+
+def test_issue_131_a_turn_cut_off_after_the_void_asks_for_no_step_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import agents.graph as graph_mod
+
+    desk, first = _confirmed_5000(tmp_path)
+    # intake, concierge, identity_gate, transaction: the budget stops the turn before confirm.
+    monkeypatch.setattr(graph_mod, "MAX_HOPS_PER_TURN", 4)
+    r = desk.say("Actually, just $3,000.")
+    assert r.outcome is Outcome.UNAVAILABLE
+    assert desk.status(first) is ProposalStatus.VOIDED
+    assert not r.step_up_required
+    refused = desk.step_up(*MARGARET)
+    assert refused.outcome is Outcome.NOT_PERMITTED
+    assert Step.VERIFY_IDENTITY not in refused.steps
+
+
+def test_issue_131_a_failed_save_changes_nothing(tmp_path: Path) -> None:
+    desk, first = _confirmed_5000(tmp_path)
+
+    def store_down(proposal: object) -> None:
+        raise RuntimeError("proposal store unavailable")
+
+    desk.runner._registry.register(ToolName.PROPOSE, store_down)
+    r = desk.say("Actually, just $3,000.")
+    assert r.outcome is Outcome.UNAVAILABLE  # "nothing has been changed"
+    assert desk.status(first) is ProposalStatus.CONFIRMED  # so the old yes still stands
+    assert r.step_up_required

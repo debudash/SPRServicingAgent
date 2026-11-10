@@ -71,8 +71,11 @@ def make(deps: Deps) -> NodeFn:
             quoted_turn=state.turn,
             hash=proposal_hash(customer_id, result, state.as_of),
         )
-        void_superseded(state)
+        # Issue #131: the old proposal was voided before the new one was saved, so a failed save
+        # left neither live while the old yes still waited for the step-up. Save first: a failed
+        # turn then changes nothing.
         call(Step.PROPOSE, ToolName.PROPOSE, proposal=proposal)
+        void_superseded(state)
         deps.audit.append(
             conversation_id=state.conversation_id,
             turn=state.turn,
