@@ -21,3 +21,7 @@ Defects found in review are the evidence for workstream F (ADR 0002), so they al
 | #68 | 2026-11-09 | Common credential forms (no-keyword SSN, 2-digit-year, dotted, compact dates, spaced digits) reached the model raw | review on PR #64 (both axes) | 19fedf2 |
 | #69 | 2026-11-09 | Ordinary turns were captured as credentials and would count as failed challenges | review on PR #64 (spec) | 8c73262 |
 | #70 | 2026-11-09 | Credentials values were exposable through asdict, equality and pickling | review on PR #64 (standards) | 25ea5c2 |
+| #73 | 2026-11-09 | Lockout was lost (and the next try could pass) when the lock case could not be opened | review on PR #72 (spec) | 7ed5009 |
+| #74 | 2026-11-09 | Credentials in a turn swallowed the customer's actual request | review on PR #72 (spec) | de2a399 |
+| #75 | 2026-11-09 | Spaced or spelled SSN digits reached the model once no challenge was open | red team (#60) | c7d9632 |
+| #84 | 2026-11-09 | The first-turn notice for an untrusted account was lost if turn 1 failed | review on PR #83 (spec) | 7582091 |
