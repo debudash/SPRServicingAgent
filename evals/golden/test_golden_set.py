@@ -33,7 +33,10 @@ OUTCOMES = {
     "UNAVAILABLE",
     "OUT_OF_SCOPE",
 }
-STATUSES = {"active", "pending_data"}
+STATUSES = {"active", "pending_data", "retired"}
+SESSION_KEYS = {"step_up"}  # ADR 0007: `gate_b_passed` is gone; a customer case logs in
+STEP_UP_MODES = {"auto", "manual"}
+TURN_KINDS = {"user", "step_up", "reviewer"}
 TIERS = {"self_service", "human"}
 CENT = Decimal("0.01")
 
@@ -98,6 +101,19 @@ def test_case_is_well_formed(kind: str, case: dict[str, Any]) -> None:
     else:
         assert case["turns"]
         assert expect.get("final_outcome", "ANSWERED") in OUTCOMES
+        for turn in case["turns"]:
+            assert len(turn) == 1 and set(turn) <= TURN_KINDS, f"one kind per turn: {turn}"
+            if "step_up" in turn:
+                answer = turn["step_up"]
+                assert answer == "correct" or sorted(answer) == ["dob", "last4"], answer
+                assert answer == "correct" or str(answer["last4"]).isdigit()
+    session = case.get("session") or {}
+    assert set(session) <= SESSION_KEYS, f"unknown session keys: {set(session) - SESSION_KEYS}"
+    assert session.get("step_up", "auto") in STEP_UP_MODES
+    scripted = any("step_up" in t for t in case.get("turns", []))
+    assert not scripted or session.get("step_up") == "manual", "a scripted step-up is manual"
+    if scripted:
+        assert case["customer"], "only a logged-in customer can step up"
 
 
 def test_every_rule_is_pinned_by_a_case() -> None:
@@ -131,3 +147,9 @@ def test_expected_quote_recomputes_from_starter_data(case: dict[str, Any]) -> No
     assert q["threshold_tier"] in TIERS
     assert q["threshold_tier"] == ("human" if large else "self_service")
     assert q["irs_notice"] == _age_under_59_and_a_half(account["dob"])
+
+
+def test_a_retired_case_says_why() -> None:
+    for _, case in ALL:
+        if case.get("status") == "retired":
+            assert "Retired" in case.get("note", ""), case["id"]

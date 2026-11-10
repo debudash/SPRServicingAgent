@@ -21,9 +21,10 @@ scrubber) are not evals. They are pytest tests in each lane, run with a scripted
 | `bullet` | The tracer bullet that must make it pass (`docs/PLAN.md`). Cases for later bullets are reported, not counted, until their bullet starts. |
 | `rules` | Grounding rules it pins (`docs/GROUNDING_RULES.md`). |
 | `prd` | PRD items it evidences. |
-| `customer` | Starter or synthetic customer ID, or `null` for an anonymous product question. |
-| `session.gate_b_passed` | Whether the identity challenge was already passed before this case. |
-| `status` | `active` (default) or `pending_data` (its data does not exist yet; reported, not run). |
+| `customer` | Starter or synthetic customer ID: the harness logs in as that customer with their demo password (ADR 0007). `null` is a guest. |
+| `session.step_up` | `auto` (default): whenever the desk asks for the step-up, the harness answers it with the customer's values, and that turn is scored like any other. `manual`: the case scripts the step-up in its turns. |
+| `turns` | Behavioural only. Each turn is one of `user: "..."` (a chat message), `step_up: correct` or `step_up: {dob, last4}` (the step-up form; `manual` cases only), or `reviewer: <decision>` (B4). |
+| `status` | `active` (default), `pending_data` (its data does not exist yet; reported, not run) or `retired` (the spec no longer describes it; reported, not run, and its ID is never reused). |
 | `quote` | The exact expected quote. `threshold_tier` is the tier from the amount rules alone (D-02). |
 | `faults` | Failures injected by the harness: `compliance_unavailable`, `tool_loop`, `execution_disabled`, `replay_last_execute`. |
 

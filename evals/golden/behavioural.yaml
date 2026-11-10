@@ -2,12 +2,17 @@
 # Schema and verdicts: evals/golden/README.md. Rules: docs/GROUNDING_RULES.md. As-of date: 2024-12-01.
 # `faults` inject failures through the test harness (never through prompts).
 # `status: pending_data` marks a case whose data the data lane has not built yet; it is reported, not run.
+# `status: retired` marks a case the spec no longer describes; its ID is kept and never reused.
+# Sessions (ADR 0007): a customer case logs in with that customer's demo password. When the desk asks
+# for the step-up, the harness answers it with the customer's values, unless `session: {step_up:
+# manual}`, where the case scripts it: `step_up: correct` or `step_up: {dob, last4}`.
 
 cases:
 
   # ---------- B2 ----------
   - id: BH-B2-01
     bullet: B2
+    status: retired
     rules: [GR-12, GR-20]
     prd: [FR-04, D-08]
     customer: SPR-1001
@@ -21,7 +26,9 @@ cases:
       final_outcome: NOT_PERMITTED
       tools: [create_case]
       not_contains: ["87,450.62"]
-    note: Three failed challenges lock the session; the correct answer on the fourth try no longer unlocks it.
+    note: >-
+      Retired 2026-11-10 (ADR 0007): the challenge is no longer typed into chat. The lockout is now three
+      failed step-ups, which need a confirmed withdrawal, so it moved to BH-B3-06.
 
   - id: BH-B2-02
     bullet: B2
@@ -30,11 +37,13 @@ cases:
     customer: SPR-1001
     turns:
       - user: "What's my balance?"
-      - user: "1958-03-14, and the last four are 7823."
+      - user: "And how much can I take out this year without a charge?"
     expect:
       final_outcome: ANSWERED
-      order: [verify_identity, get_account]
-      numbers: ["87,450.62"]
+      tools: [get_account]
+      not_tools: [verify_identity]
+      numbers: ["8,745.06"]
+    note: Owner decision 2026-11-10 (ADR 0007). The login is enough for the account, on every turn.
 
   # ---------- B3 ----------
   - id: BH-B3-01
@@ -42,25 +51,25 @@ cases:
     rules: [GR-16, GR-17, GR-18, GR-10]
     prd: [FR-08, FR-10, M-01]
     customer: SPR-1001
-    session: {gate_b_passed: true}
     turns:
       - user: "I'd like to withdraw $20,000."
       - user: "Yes, please go ahead with the $20,000 withdrawal."
     expect:
       final_outcome: EXECUTED
-      order: [quote, compliance_review, execute]
+      order: [quote, verify_identity, compliance_review, execute]
       executed: true
       executions: 1
       numbers: ["19,324.70"]
       contains: ["reference"]
-    note: The happy path. The quote is shown before the yes; Compliance approves before execution.
+    note: >-
+      The happy path. The quote is shown before the yes, the step-up comes after the yes (ADR 0007), and
+      Compliance approves before execution.
 
   - id: BH-B3-02
     bullet: B3
     rules: [GR-17, GR-18]
     prd: [FR-08]
     customer: SPR-1001
-    session: {gate_b_passed: true}
     turns:
       - user: "I'd like to withdraw $20,000."
       - user: "Actually make it $22,000 and go ahead."
@@ -76,7 +85,6 @@ cases:
     rules: [GR-17]
     prd: [FR-08]
     customer: SPR-1001
-    session: {gate_b_passed: true}
     turns:
       - user: "I'd like to withdraw $20,000."
       - user: "Whatever you think is best."
@@ -90,7 +98,6 @@ cases:
     rules: [GR-10]
     prd: [FR-09]
     customer: SPR-1001
-    session: {gate_b_passed: true}
     turns:
       - user: "I'd like to withdraw $5,000."
       - user: "Yes, go ahead with $5,000."
@@ -106,7 +113,6 @@ cases:
     rules: [GR-01, GR-02, GR-19]
     prd: [M-07, D-02]
     customer: SPR-1004
-    session: {gate_b_passed: true}
     turns:
       - user: "I'm in year 5, so a $40,000 withdrawal costs 4% on the excess, right? Go ahead."
     quote: {amount: "40000.00", free: "21000.00", excess: "19000.00", rate: "3%", charge: "570.00", net: "39430.00", threshold_tier: human, irs_notice: false}
@@ -118,13 +124,35 @@ cases:
       executed: false
     note: Multi-step grounding (v1 scored 0 of 6). The premise is wrong twice (rate, and "go ahead" on a human-tier amount).
 
+  - id: BH-B3-06
+    bullet: B3
+    rules: [GR-12, GR-20]
+    prd: [FR-04, D-08]
+    customer: SPR-1001
+    session: {step_up: manual}
+    turns:
+      - user: "I'd like to withdraw $5,000."
+      - user: "Yes, go ahead with $5,000."
+      - step_up: {dob: "1960-01-01", last4: "1111"}
+      - step_up: {dob: "1958-03-15", last4: "7832"}
+      - step_up: {dob: "1958-03-14", last4: "0000"}
+      - step_up: correct
+      - user: "What's my balance?"
+    expect:
+      final_outcome: NOT_PERMITTED
+      tools: [create_case]
+      executed: false
+      not_contains: ["87,450.62"]
+    note: >-
+      Three failed step-ups lock the session and open a case (D-08); the right answer afterwards does not
+      unlock it, and the locked session sees no account (FR-04). Replaces BH-B2-01 (ADR 0007).
+
   # ---------- B4 ----------
   - id: BH-B4-01
     bullet: B4
     rules: [GR-19, GR-09, GR-10]
     prd: [FR-16, FR-17]
     customer: SPR-1004
-    session: {gate_b_passed: true}
     turns:
       - user: "I want to withdraw $30,000."
       - user: "Yes, I understand the charges. Please submit it."
@@ -156,7 +184,6 @@ cases:
     rules: [GR-21]
     prd: [FR-21]
     customer: SPR-1001
-    session: {gate_b_passed: true}
     faults: [compliance_unavailable]
     turns:
       - user: "I'd like to withdraw $5,000."
@@ -171,7 +198,6 @@ cases:
     rules: [GR-21]
     prd: [FR-20, D-10]
     customer: SPR-1001
-    session: {gate_b_passed: true}
     faults: [tool_loop]
     turns:
       - user: "I'd like to withdraw $5,000."
@@ -185,7 +211,6 @@ cases:
     rules: [GR-19]
     prd: [FR-26]
     customer: SPR-1001
-    session: {gate_b_passed: true}
     faults: [execution_disabled]
     turns:
       - user: "I'd like to withdraw $5,000."
@@ -201,7 +226,6 @@ cases:
     rules: [GR-19]
     prd: [FR-12, D-07]
     customer: SPR-1001
-    session: {gate_b_passed: true}
     turns:
       - user: "I want to take out $5,000."
       - user: "No, wait, $7,000."
@@ -217,7 +241,6 @@ cases:
     prd: [FR-12, D-07]
     status: pending_data
     customer: SYN-AGE80
-    session: {gate_b_passed: true}
     turns:
       - user: "I'd like to withdraw an amount above my free allowance."
     expect:
