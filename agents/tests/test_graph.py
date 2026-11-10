@@ -10,7 +10,13 @@ from agents.nodes import concierge as concierge_node
 from agents.nodes.common import Stores, TurnContext
 from agents.nodes.knowledge import KnowledgeDraft
 from agents.runner import GraphDeskRunner
-from agents.testing import MemoryAccounts, MemoryCases, MemoryIdentity, ScriptedChatModel
+from agents.testing import (
+    MemoryAccounts,
+    MemoryCases,
+    MemoryIdentity,
+    MemoryPasswords,
+    ScriptedChatModel,
+)
 from contracts.messages import Citation, Intent, IntentKind, KnowledgeAnswer
 from contracts.outcomes import Outcome
 from contracts.ports import AuditEvent, AuditRecord, KnowledgeChunk
@@ -75,7 +81,10 @@ class MemoryAudit:
 def no_accounts() -> Stores:
     """B2 stores with no accounts in them, for runs that never reach an account."""
     return Stores(
-        accounts=MemoryAccounts({}, trusted=set()), identity=MemoryIdentity({}), cases=MemoryCases()
+        accounts=MemoryAccounts({}, trusted=set()),
+        identity=MemoryIdentity({}),
+        cases=MemoryCases(),
+        passwords=MemoryPasswords({}),
     )
 
 

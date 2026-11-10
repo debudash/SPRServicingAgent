@@ -29,16 +29,18 @@ UNAVAILABLE_TEXT = (
 
 
 CONTACT = "1-800-555-0192 (Mon-Fri, 8am-6pm CT)"
+# ADR 0007: nothing asks for a date of birth or SSN digits in chat. A session bound without a
+# login is asked to log in; the step-up check has its own form.
 ASK_TEXT = (
-    "Before I can discuss your account, I need to confirm it's you. Please give me your date of "
-    "birth and the last four digits of your Social Security number."
+    "Please log in to your account first, so I can discuss it with you. I'm happy to answer "
+    "general questions about the SecureGrowth Fixed Annuity."
 )
 UNTRUSTED_TEXT = (
     "I'm not able to service this account through the desk. Please call SPR Financials at "
     f"{CONTACT} and the team will help you."
 )
 NO_CUSTOMER_TEXT = (
-    "Please sign in to your account first; I can only discuss the account you're signed in to. "
+    "Please log in to your account first; I can only discuss the account you're logged in to. "
     "I'm happy to answer general questions about the SecureGrowth Fixed Annuity."
 )
 LOCKED_TEXT = (
@@ -56,7 +58,7 @@ NO_ACCOUNT_THIRD_PARTY_TEXT = (
     "Fixed Annuity."
 )
 OTHER_ACCOUNT_TEXT = (
-    "I can only discuss the account you're signed in to. The owner of any other account would need "
+    "I can only discuss the account you're logged in to. The owner of any other account would need "
     "to contact us themselves."
 )
 RESTRICTED_TEXT = (
@@ -65,12 +67,19 @@ RESTRICTED_TEXT = (
 )
 
 
+STEP_UP_PASSED_TEXT = "Thank you, that's confirmed."
+NO_STEP_UP_TEXT = "There's nothing waiting for an identity check right now, so nothing was checked."
+STEP_UP_INCOMPLETE_TEXT = (
+    "Please give your date of birth and the four digits of your SSN; nothing was checked."
+)
+
+
 def _failed_text(attempts: int) -> str:
     left = MAX_FAILED_CHALLENGES - attempts
     tries = "try" if left == 1 else "tries"
     return (
-        "Those details don't match our records, so I can't discuss the account yet. You have "
-        f"{left} more {tries}: please give your date of birth and the last four digits of your SSN."
+        "Those details don't match our records. You have "
+        f"{left} more {tries}: please fill in the identity check again."
     )
 
 
@@ -97,10 +106,38 @@ def _case_text(case_id: str, locked: bool) -> str:
     )
 
 
-def decide(state: ConversationState, failure: str | None) -> tuple[Outcome, str, str | None]:
+def decide(
+    state: ConversationState, failure: str | None, step_up: bool = False
+) -> tuple[Outcome, str, str | None]:
     """The turn's outcome, the reply text and the reference (a case ID) shown to the customer."""
+    if step_up:
+        return _after_step_up(state, failure)
     outcome, text, reference = _decide(state, failure)
     return outcome, _first_turn_notice(state) + text, reference
+
+
+def _after_step_up(
+    state: ConversationState, failure: str | None
+) -> tuple[Outcome, str, str | None]:
+    """A step-up turn (ADR 0007): the form's result. #88/#89 continue the withdrawal on a pass."""
+    gate = state.gate
+    if gate is GateResult.LOCKED_NOW:
+        packet = state.case_packet
+        if packet is None:  # issue #73: the lock holds even when the case could not be opened
+            return Outcome.NOT_PERMITTED, LOCKED_NO_CASE_TEXT, None
+        return Outcome.NOT_PERMITTED, _case_text(packet.case_id, locked=True), packet.case_id
+    if failure is not None:
+        return Outcome.UNAVAILABLE, UNAVAILABLE_TEXT, None
+    if gate is GateResult.PASSED:
+        return Outcome.ANSWERED, STEP_UP_PASSED_TEXT, None
+    if gate is GateResult.FAILED:
+        return Outcome.NOT_PERMITTED, _failed_text(state.session.failed_attempts), None
+    refusals: dict[GateResult | None, str] = {
+        GateResult.UNTRUSTED: UNTRUSTED_TEXT,
+        GateResult.LOCKED: LOCKED_TEXT,
+        GateResult.ASK: ASK_TEXT,  # bound without a login: log in first (review on PR #113)
+    }
+    return Outcome.NOT_PERMITTED, refusals.get(gate, NO_STEP_UP_TEXT), None
 
 
 def _first_turn_notice(state: ConversationState) -> str:
@@ -141,36 +178,18 @@ def _decide(state: ConversationState, failure: str | None) -> tuple[Outcome, str
     gate = state.gate
     if kind in ACCOUNT_INTENTS and gate is not None:
         return _after_gate(state, gate)
-    # Issue #74 (found by /code-review on PR #72): any gate result used to decide the reply, so
-    # credentials sent with another request swallowed it, and "not available yet" came back as
-    # ANSWERED. The outcome now follows what was asked; the gate result is only a lead-in.
-    lead = _gate_lead_in(state)
+    # Issue #74 (found by /code-review on PR #72): the outcome follows what was asked. Since
+    # ADR 0007 typed credentials never reach the gate, so no gate result leads into these replies.
     if kind is IntentKind.PRODUCT_QUESTION:
         answer = state.knowledge_answer
         if answer is None:
             return Outcome.UNAVAILABLE, UNAVAILABLE_TEXT, None
         if answer.found:
-            return Outcome.ANSWERED, lead + answer.text, None
-        return Outcome.NO_SOURCE, lead + answer.text, None
+            return Outcome.ANSWERED, answer.text, None
+        return Outcome.NO_SOURCE, answer.text, None
     if kind is IntentKind.OUT_OF_SCOPE:
-        return Outcome.OUT_OF_SCOPE, lead + OUT_OF_SCOPE_TEXT, None
-    return Outcome.NOT_PERMITTED, lead + NOT_YET_TEXT, None
-
-
-def _gate_lead_in(state: ConversationState) -> str:
-    """What a non-account turn says about the identity check its credentials triggered."""
-    gate = state.gate
-    if gate is GateResult.PASSED:
-        return "Thank you, you're verified. "
-    if gate is GateResult.FAILED:
-        left = MAX_FAILED_CHALLENGES - state.session.failed_attempts
-        tries = "try" if left == 1 else "tries"
-        return f"Those identity details don't match our records ({left} more {tries}). "
-    if gate is GateResult.UNTRUSTED:
-        return UNTRUSTED_TEXT + " "
-    if gate is GateResult.LOCKED:
-        return LOCKED_TEXT + " "
-    return ""
+        return Outcome.OUT_OF_SCOPE, OUT_OF_SCOPE_TEXT, None
+    return Outcome.NOT_PERMITTED, NOT_YET_TEXT, None
 
 
 def _after_gate(state: ConversationState, gate: GateResult) -> tuple[Outcome, str, str | None]:
@@ -184,14 +203,14 @@ def _after_gate(state: ConversationState, gate: GateResult) -> tuple[Outcome, st
         return Outcome.NOT_PERMITTED, refusals[gate], None
     if gate is GateResult.FAILED:
         return Outcome.NOT_PERMITTED, _failed_text(state.session.failed_attempts), None
-    if state.account_view is not None:  # PASSED or VERIFIED, and the account was read
+    if state.account_view is not None:  # LOGGED_IN, PASSED or VERIFIED, and the account was read
         return Outcome.ANSWERED, _account_text(state.account_view), None
     return Outcome.UNAVAILABLE, UNAVAILABLE_TEXT, None  # passed, but the account was not read
 
 
 def make(deps: Deps) -> NodeFn:
     def respond(state: ConversationState) -> dict[str, Any]:
-        outcome, text, reference = decide(state, deps.turn.failure)
+        outcome, text, reference = decide(state, deps.turn.failure, deps.turn.step_up)
         reply = Reply(text=text, outcome=outcome, reference=reference)
         answered = outcome is Outcome.ANSWERED
         citations = (

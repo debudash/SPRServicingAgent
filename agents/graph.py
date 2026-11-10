@@ -1,9 +1,10 @@
-"""The B2 graph (ARCHITECTURE 3.1, 3.2):
+"""The desk graph (ARCHITECTURE 3.1, 3.2, ADR 0007):
 
     intake -> concierge -> knowledge                                   -> respond
                         -> identity_gate -> (account | case | respond)  -> respond
                         -> case                                        -> respond
                         -> respond
+    intake -> identity_gate -> (case | respond)        a step-up turn (the form, no chat text)
 
 Routing is code (ADR 0003): the model classifies, it never picks the next node. Every node's
 writes pass through `contracts.state.check_write`; a node writing a field it does not own raises
@@ -72,10 +73,9 @@ def route_after_concierge(state: ConversationState, turn: TurnContext) -> str:
         return Node.CASE.value if case.reason_for(state) else Node.RESPOND.value
     if kind in (IntentKind.OTHER_ACCOUNT, IntentKind.RESTRICTED_INFO):  # NG-05, NG-08
         return Node.RESPOND.value
-    # A complete set of credentials is a challenge attempt whatever the model called the turn:
-    # routing is code (ADR 0003), so a mislabel cannot make the customer repeat them.
-    creds = turn.credentials
-    if kind in ACCOUNT_INTENTS or (creds is not None and creds.complete):
+    # ADR 0007: credentials typed into chat are masked and never checked, so only what was asked
+    # decides the route.
+    if kind in ACCOUNT_INTENTS:
         return Node.IDENTITY_GATE.value
     if kind is IntentKind.PRODUCT_QUESTION:
         return Node.KNOWLEDGE.value
@@ -87,15 +87,23 @@ def route_after_gate(state: ConversationState, turn: TurnContext) -> str:
         return Node.RESPOND.value
     if state.gate is GateResult.LOCKED_NOW:  # D-08: the third failure opens a case
         return Node.CASE.value
+    if turn.step_up:  # the step-up's result is the reply; #88/#89 continue the withdrawal
+        return Node.RESPOND.value
     kind = state.intent.kind if state.intent is not None else None
-    # Issue #74 (found by /code-review on PR #72): every gated turn went to respond, so a
-    # product question sent with credentials was never answered. The gate was visited because
-    # credentials were present; a turn that is not about the account continues on its own route.
+    # Issue #74 (found by /code-review on PR #72): a turn that is not about the account continues
+    # on its own route. Since ADR 0007 only account intents reach the gate, so this is a guard.
     if kind not in ACCOUNT_INTENTS:
         return Node.KNOWLEDGE.value if kind is IntentKind.PRODUCT_QUESTION else Node.RESPOND.value
-    if state.gate in (GateResult.PASSED, GateResult.VERIFIED):
+    if state.gate in (GateResult.LOGGED_IN, GateResult.PASSED, GateResult.VERIFIED):
         return Node.ACCOUNT.value
     return Node.RESPOND.value
+
+
+def route_after_intake(state: ConversationState, turn: TurnContext) -> str:
+    """A step-up turn has no chat text for the Concierge: it goes straight to the gate."""
+    if turn.failure is None and turn.step_up:
+        return Node.IDENTITY_GATE.value
+    return Node.CONCIERGE.value
 
 
 def build_graph(deps: Deps) -> Any:
@@ -112,7 +120,11 @@ def build_graph(deps: Deps) -> Any:
     ):
         g.add_node(node.value, cast(Any, _guarded(node, module.make(deps), turn)))
     g.add_edge(START, Node.INTAKE.value)
-    g.add_edge(Node.INTAKE.value, Node.CONCIERGE.value)
+    g.add_conditional_edges(
+        Node.INTAKE.value,
+        lambda s: route_after_intake(s, turn),
+        [Node.CONCIERGE.value, Node.IDENTITY_GATE.value],
+    )
     g.add_conditional_edges(
         Node.CONCIERGE.value,
         lambda s: route_after_concierge(s, turn),
