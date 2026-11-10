@@ -240,6 +240,9 @@ class RuleFlag(StrEnum):
     FULL_SURRENDER = "full_surrender"
     AGE_80_OVER_ALLOWANCE = "age_80_over_allowance"  # D-07
     EXECUTION_DISABLED = "execution_disabled"  # FR-26
+    # 0.6.1 (#136): this conversation already has a withdrawal with a person (a hold, an
+    # escalation or a flag). Every later withdrawal in it goes to a person too (FR-12, GR-19).
+    OPEN_REVIEW = "open_review"
 
 
 class RuleFlags(Message):
@@ -345,6 +348,12 @@ class CaseReason(StrEnum):
 
     LOCKED = "locked"  # third failed identity challenge (D-08, FR-04)
     THIRD_PARTY = "third_party"  # someone acting for the customer (D-09)
+    # 0.6.1 (#89): a proposal exists and a person must review it. The rules flagged it (D-02,
+    # D-07, FR-26), Compliance held or escalated it (FR-11, FR-12), or the customer asked to go
+    # ahead with a human-tier quote (GR-19). The packet names the proposal and carries its quote.
+    # Requests with no proposal (a waiver asked before any amount, RMD, hardship) get their own
+    # reasons when they are built.
+    WITHDRAWAL_REVIEW = "withdrawal_review"
 
 
 class CasePacket(Message):
@@ -363,6 +372,22 @@ class CasePacket(Message):
     compliance_reasons: tuple[Reason, ...] = ()
     excerpt: str
     recommendation: str
+    # 0.6.1 (#89, review on PR #134): the proposal under review, so a reviewer's approval binds to
+    # it (GR-18, ARCHITECTURE 3.4), and what Compliance decided, so hold and escalate stay
+    # distinguishable and the vulnerable-customer signals reach the reviewer (FR-11, FR-12).
+    proposal_id: str | None = None
+    compliance_decision: Decision | None = None
+    signals: frozenset[Signal] = frozenset()
+
+    @model_validator(mode="after")
+    def _review_names_its_proposal(self) -> "CasePacket":
+        # 0.6.1: a reviewer decides on the proposal and the figures the customer saw, so a
+        # withdrawal review without them cannot be acted on.
+        if self.opened_for is CaseReason.WITHDRAWAL_REVIEW and (
+            self.quote is None or self.proposal_id is None
+        ):
+            raise ValueError("a withdrawal review names its proposal and carries its quote")
+        return self
 
 
 class Reply(Message):
