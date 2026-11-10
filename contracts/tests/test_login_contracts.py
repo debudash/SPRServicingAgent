@@ -173,3 +173,27 @@ def test_issue_107_a_locked_session_never_sees_the_account() -> None:
     )
     with pytest.raises(ValidationError):
         _state(locked, _view())
+
+
+# ---------- #108: the contract allowed a passed step-up on a locked session ----------
+# Found by /code-review on PR #106 (spec): ADR 0007 section 4, the right answer after a lock.
+def test_issue_108_a_locked_session_cannot_have_passed_the_step_up() -> None:
+    with pytest.raises(ValidationError):
+        Session(
+            customer_id="SPR-1001",
+            gate_a_trusted=True,
+            authenticated=True,
+            gate_b_passed=True,
+            failed_attempts=3,
+            locked=True,
+        )
+
+
+def test_issue_108_passed_and_verified_need_an_unlocked_session() -> None:
+    from contracts.state import GATE_REQUIRES, GateResult
+
+    locked_only = Session.model_construct(
+        customer_id="SPR-1001", gate_a_trusted=True, gate_b_passed=True, locked=True
+    )  # built past the validator, to test the gate table on its own
+    assert not GATE_REQUIRES[GateResult.PASSED](locked_only)
+    assert not GATE_REQUIRES[GateResult.VERIFIED](locked_only)

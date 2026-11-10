@@ -57,6 +57,12 @@ class Session(_State):
             raise ValueError("the third failed challenge locks the session (D-08)")
         if self.authenticated and self.customer_id is None:
             raise ValueError("a login binds a customer")
+        # Issue #108 (found by /code-review on PR #106): nothing related a pass to a lock, so a
+        # passed step-up on a locked session validated. A lock only follows failed attempts made
+        # before any pass, and the right answer after a lock does not unlock it (D-08, ADR 0007),
+        # so no valid flow holds both.
+        if self.gate_b_passed and self.locked:
+            raise ValueError("a locked session cannot pass the step-up (D-08)")
         if self.gate_b_passed and (self.customer_id is None or not self.gate_a_trusted):
             raise ValueError("Gate B can only pass for a bound customer on a trusted account")
         return self
@@ -91,8 +97,8 @@ GATE_REQUIRES: dict[GateResult, Callable[[Session], bool]] = {
     GateResult.ASK: _challengeable,
     GateResult.FAILED: lambda s: _challengeable(s) and s.failed_attempts >= 1,
     GateResult.LOCKED_NOW: lambda s: s.locked,
-    GateResult.PASSED: lambda s: s.gate_b_passed,
-    GateResult.VERIFIED: lambda s: s.gate_b_passed,
+    GateResult.PASSED: lambda s: s.gate_b_passed and not s.locked,  # issue #108
+    GateResult.VERIFIED: lambda s: s.gate_b_passed and not s.locked,
 }
 
 
