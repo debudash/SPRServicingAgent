@@ -159,3 +159,17 @@ def test_fakes_conform_to_the_login_ports() -> None:
     assert isinstance(runner.login("SPR-1001", "wrong"), LoginRefused)
     assert runner.step_up("CV1", date(1958, 3, 14), "7823").turn == 2
     assert not passwords.check_password("SPR-1001", "wrong")
+
+
+# ---------- #107: a logged-in but locked session could hold an account view ----------
+# Found by /code-review on PR #106 (spec): the login branch dropped the lock (D-08, FR-04).
+def test_issue_107_a_locked_session_never_sees_the_account() -> None:
+    locked = Session(
+        customer_id="SPR-1001",
+        gate_a_trusted=True,
+        authenticated=True,
+        failed_attempts=3,
+        locked=True,
+    )
+    with pytest.raises(ValidationError):
+        _state(locked, _view())

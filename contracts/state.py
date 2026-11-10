@@ -163,6 +163,12 @@ class ConversationState(_State):
         if self.account_view is not None:
             if not (s.gate_a_trusted and (s.authenticated or s.gate_b_passed)):
                 raise ValueError("an account view needs Gate A and a login (FR-02, ADR 0007)")
+            # Issue #107 (found by /code-review on PR #106): the B2 rule needed gate_b_passed,
+            # which a locked session never has, so the lock was covered implicitly. The login
+            # branch has no such implication, so a locked session reached the account. The lock
+            # is now named: no account view in a locked session, whichever way in (D-08, FR-04).
+            if s.locked:
+                raise ValueError("a locked session sees no account (D-08)")
             if self.account_view.customer_id != s.customer_id:
                 raise ValueError("an account view must be the bound customer's (NG-05)")
         if self.gate is not None and not GATE_REQUIRES[self.gate](s):
