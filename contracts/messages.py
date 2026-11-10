@@ -240,6 +240,9 @@ class RuleFlag(StrEnum):
     FULL_SURRENDER = "full_surrender"
     AGE_80_OVER_ALLOWANCE = "age_80_over_allowance"  # D-07
     EXECUTION_DISABLED = "execution_disabled"  # FR-26
+    # 0.6.1 (#136): this conversation already has a withdrawal with a person (a hold, an
+    # escalation or a flag). Every later withdrawal in it goes to a person too (FR-12, GR-19).
+    OPEN_REVIEW = "open_review"
 
 
 class RuleFlags(Message):
