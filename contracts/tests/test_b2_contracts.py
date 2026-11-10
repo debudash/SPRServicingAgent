@@ -247,16 +247,21 @@ def test_issue_80_a_case_packet_needs_a_customer(customer_id: str | None) -> Non
 
 
 # ---------- 0.6.1 (#89): a withdrawal review carries its quote ----------
-def _review_packet(quote: Quote | None) -> CasePacket:
+def _review_packet(
+    quote: Quote | None,
+    proposal_id: str | None = "P-1",
+    reason: CaseReason = CaseReason.WITHDRAWAL_REVIEW,
+) -> CasePacket:
     return CasePacket(
         case_id="CASE-1",
         conversation_id="CV1",
         customer_id="SPR-1001",
-        opened_for=CaseReason.WITHDRAWAL_REVIEW,
+        opened_for=reason,
         request_summary="Withdrawal over $25,000.",
         quote=quote,
         excerpt="withdraw $30,000",
         recommendation="Review the withdrawal.",
+        proposal_id=proposal_id,
     )
 
 
@@ -272,6 +277,16 @@ def test_a_withdrawal_review_carries_its_quote() -> None:
         threshold_tier=ThresholdTier.HUMAN,
         irs_notice=False,
     )
-    assert _review_packet(quote).quote == quote
+    packet = _review_packet(quote)
+    assert (packet.quote, packet.proposal_id) == (quote, "P-1")
+    assert packet.compliance_decision is None and packet.signals == frozenset()
     with pytest.raises(ValidationError):
         _review_packet(None)
+    with pytest.raises(ValidationError):
+        _review_packet(quote, proposal_id=None)
+
+
+@pytest.mark.parametrize("reason", [CaseReason.LOCKED, CaseReason.THIRD_PARTY])
+def test_other_cases_need_no_proposal(reason: CaseReason) -> None:
+    packet = _review_packet(None, proposal_id=None, reason=reason)
+    assert packet.quote is None and packet.proposal_id is None

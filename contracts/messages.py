@@ -345,9 +345,11 @@ class CaseReason(StrEnum):
 
     LOCKED = "locked"  # third failed identity challenge (D-08, FR-04)
     THIRD_PARTY = "third_party"  # someone acting for the customer (D-09)
-    # 0.6.1 (#89): a withdrawal a person must review. The rules flagged it (D-02, D-07, FR-26),
-    # Compliance held or escalated it (FR-11, FR-12), or the customer asked to go ahead with a
-    # human-tier quote (GR-19). The packet carries the quote.
+    # 0.6.1 (#89): a proposal exists and a person must review it. The rules flagged it (D-02,
+    # D-07, FR-26), Compliance held or escalated it (FR-11, FR-12), or the customer asked to go
+    # ahead with a human-tier quote (GR-19). The packet names the proposal and carries its quote.
+    # Requests with no proposal (a waiver asked before any amount, RMD, hardship) get their own
+    # reasons when they are built.
     WITHDRAWAL_REVIEW = "withdrawal_review"
 
 
@@ -367,13 +369,21 @@ class CasePacket(Message):
     compliance_reasons: tuple[Reason, ...] = ()
     excerpt: str
     recommendation: str
+    # 0.6.1 (#89, review on PR #134): the proposal under review, so a reviewer's approval binds to
+    # it (GR-18, ARCHITECTURE 3.4), and what Compliance decided, so hold and escalate stay
+    # distinguishable and the vulnerable-customer signals reach the reviewer (FR-11, FR-12).
+    proposal_id: str | None = None
+    compliance_decision: Decision | None = None
+    signals: frozenset[Signal] = frozenset()
 
     @model_validator(mode="after")
-    def _review_has_its_quote(self) -> "CasePacket":
-        # 0.6.1: a reviewer decides on the figures the customer saw, so a withdrawal review
-        # without its quote cannot be acted on.
-        if self.opened_for is CaseReason.WITHDRAWAL_REVIEW and self.quote is None:
-            raise ValueError("a withdrawal review carries the quote the customer saw")
+    def _review_names_its_proposal(self) -> "CasePacket":
+        # 0.6.1: a reviewer decides on the proposal and the figures the customer saw, so a
+        # withdrawal review without them cannot be acted on.
+        if self.opened_for is CaseReason.WITHDRAWAL_REVIEW and (
+            self.quote is None or self.proposal_id is None
+        ):
+            raise ValueError("a withdrawal review names its proposal and carries its quote")
         return self
 
 

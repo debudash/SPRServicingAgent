@@ -17,7 +17,8 @@ The next version tightens them (an account view needs a login, the step-up needs
 is for guests only) once the lanes comply (#102, #103), the same way 0.4.0 was made.
 
 0.6.1 (#89) is additive: `CaseReason.WITHDRAWAL_REVIEW`, the case for a withdrawal a person must
-review, which always carries its quote.
+review, which always names its proposal and carries its quote; and three optional `CasePacket`
+fields (`proposal_id`, `compliance_decision`, `signals`) for the B4 reviewer.
 """
 
 CONTRACTS_VERSION = "0.6.1"
