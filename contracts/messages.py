@@ -273,7 +273,9 @@ class CasePacket(Message):
 
     case_id: str
     conversation_id: str
-    customer_id: str | None
+    # Issue #80 (owner decision): every case names its customer. A third party who does not
+    # identify an account gets no case (D-09 applies to an account bound to the session).
+    customer_id: str = Field(min_length=1)
     opened_for: CaseReason
     request_summary: str
     quote: Quote | None

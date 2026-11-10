@@ -51,7 +51,8 @@ The as-of date for every rule is the configured system date, **2024-12-01** (PRD
   after both identity gates pass. Any other account, or the same account before verification, gets no
   account information. (FR-02, NG-05)
 - **GR-13 The owner, not a helper.** A third party (spouse, child, beneficiary, claimed attorney) gets
-  public product information and a case, never account information or actions. (NG-04, D-09)
+  public product information and, when an account is bound to the session, a case; never account
+  information or actions. (NG-04, D-09)
 - **GR-14 Untrusted accounts are not challenged.** On an account that fails Gate A, the desk does not ask
   for date of birth or SSN digits. It explains and gives SPR's contact details. (FR-03)
 - **GR-15 Product scope.** The desk serves the SecureGrowth Fixed Annuity only. Other products, other

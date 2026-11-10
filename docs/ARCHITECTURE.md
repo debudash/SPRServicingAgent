@@ -132,7 +132,7 @@ which returns a band (`under_59_5`, `59_5_to_79`, `80_plus`), not the date (PG-0
 |---|---|---|---|
 | `case_id` | TEXT PK | I | The case reference shown to the customer |
 | `conversation_id` | TEXT FK | I | |
-| `customer_id` | TEXT FK, nullable | I | Null when a third party contacts the desk about someone they do not identify |
+| `customer_id` | TEXT FK | I | Required by the contract (0.4.0, #80): every case names its customer. A third party in an anonymous session gets no case and is told the owner must contact SPR. The column is still nullable in migration 0002; the contract enforces it at the port |
 | `proposal_id` | TEXT FK, nullable | I | |
 | `opened_for` | TEXT | I | `CaseReason`: `locked` (D-08), `third_party` (D-09); later bullets add reasons |
 | `reasons` | TEXT (JSON) | I | Rule flags and Compliance reasons |
@@ -226,6 +226,10 @@ sequenceDiagram
         end
     end
 ```
+
+FR-03 at the start (#82): the desk's first reply in a session bound to an untrusted account carries the
+notice and the contact number, whatever the turn asked; a product question is still answered. A third
+party in an anonymous session gets no case (contracts 0.4.0): there is no account to open one for.
 
 Where the capture runs: at the runner's entry, before the customer turn is appended to the
 transcript, so the raw text never enters `ConversationState` (and so never reaches a checkpoint).
