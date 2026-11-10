@@ -91,7 +91,14 @@ class SqliteIdentityCheck:
             (customer_id,),
         ).fetchone()
         salt, stored, n, r, p = row or (_NO_SALT, "", SCRYPT_N, SCRYPT_R, SCRYPT_P)
-        computed = _scrypt(password, str(salt), int(n), int(r), int(p))
+        # Issue #112 (found by /code-review on PR #109): a corrupt row (a non-hex salt, an invalid
+        # scrypt cost) went straight into bytes.fromhex and hashlib.scrypt, so the login raised
+        # instead of refusing. A row that can't be used refuses the login: the guard fails closed,
+        # and the error, which could describe stored values, goes nowhere.
+        try:
+            computed = _scrypt(password, str(salt), int(n), int(r), int(p))
+        except (ValueError, TypeError, OverflowError, MemoryError):
+            return False
         return row is not None and bool(password) and hmac.compare_digest(computed, str(stored))
 
     def store_password(self, customer_id: str, password: str) -> bool:

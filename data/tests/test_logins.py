@@ -162,3 +162,20 @@ def test_issue_111_ordinary_python_is_not_flagged(source: str) -> None:
 
 def test_issue_111_every_python_lane_is_scanned() -> None:
     assert {"data", "agents", "evals", "redteam"} <= set(SCANNED_LANES)
+
+
+# ---------- #112: check_password raised on a corrupt login row ----------
+# Found by /code-review on PR #109 (spec): PasswordCheck promises a boolean; a guard fails closed.
+@pytest.mark.parametrize(
+    "corrupt",
+    [
+        "UPDATE logins SET salt = 'not-hex' WHERE customer_id = 'SPR-1001'",
+        "UPDATE logins SET scrypt_n = 3 WHERE customer_id = 'SPR-1001'",  # not a power of 2
+        "UPDATE logins SET scrypt_r = 0 WHERE customer_id = 'SPR-1001'",
+    ],
+)
+def test_issue_112_a_corrupt_login_row_refuses_instead_of_raising(
+    conn: sqlite3.Connection, corrupt: str
+) -> None:
+    conn.execute(corrupt)
+    assert SqliteIdentityCheck(conn).check_password("SPR-1001", _demo()["SPR-1001"]) is False
