@@ -17,13 +17,17 @@ class SqliteCaseStore:
             "rule_flags": sorted(f.value for f in packet.rule_flags),
             "compliance_reasons": [r.model_dump(mode="json") for r in packet.compliance_reasons],
         }
+        # Issue #144 (found while building B4): the INSERT hard-coded NULL for proposal_id, written
+        # for B2 when no case had a proposal. A withdrawal review names its proposal (0.6.1); the
+        # reviewer's approval binds to it (GR-18), so the row keeps it.
         self._conn.execute(
             "INSERT INTO cases (case_id, conversation_id, customer_id, proposal_id, opened_for, "
-            "reasons, packet, opened_at) VALUES (?, ?, ?, NULL, ?, ?, ?, ?)",
+            "reasons, packet, opened_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 packet.case_id,
                 packet.conversation_id,
                 packet.customer_id,
+                packet.proposal_id,
                 packet.opened_for.value,
                 json.dumps(reasons),
                 packet.model_dump_json(),
