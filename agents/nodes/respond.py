@@ -135,6 +135,7 @@ def _after_step_up(
     refusals: dict[GateResult | None, str] = {
         GateResult.UNTRUSTED: UNTRUSTED_TEXT,
         GateResult.LOCKED: LOCKED_TEXT,
+        GateResult.ASK: ASK_TEXT,  # bound without a login: log in first (review on PR #113)
     }
     return Outcome.NOT_PERMITTED, refusals.get(gate, NO_STEP_UP_TEXT), None
 

@@ -266,6 +266,8 @@ def test_a_passed_step_up_is_recorded_and_its_values_kept_nowhere() -> None:
     assert r.nodes == (Node.INTAKE, Node.IDENTITY_GATE, Node.RESPOND)  # no model sees it
     assert desk.state().session.gate_b_passed and not r.step_up_required
     assert AuditEvent.GATE_B_PASSED in desk.events()
+    step = TraceEvent(turn=1, node=Node.IDENTITY_GATE, step=Step.VERIFY_IDENTITY)
+    assert step in desk.state().trace
     assert desk.concierge.calls == []
     kept = desk.everything_kept()
     for value in ("7823", "1958-03-14", "1958"):
@@ -424,9 +426,15 @@ def test_issue_74_guest_credentials_with_a_product_question_get_the_answer() -> 
     assert desk.identity.checks == 0
 
 
-def test_issue_74_credentials_with_an_unbuilt_request_are_never_answered() -> None:
+@pytest.mark.parametrize("stepped_up_first", [False, True])
+def test_issue_74_credentials_with_an_unbuilt_request_are_never_answered(
+    stepped_up_first: bool,
+) -> None:
     desk = Desk(IntentKind.WITHDRAWAL)
-    [r] = desk.talk("SPR-1001", "1958-03-14 and 7823, withdraw $2,000 please")
+    desk.login("SPR-1001")
+    if stepped_up_first:  # even a session that passed the step-up gets no unbuilt answer
+        desk.step_ups(RIGHT)
+    r = desk.runner.send(desk.conv, "1958-03-14 and 7823, withdraw $2,000 please")
     assert r.outcome is Outcome.NOT_PERMITTED
     assert "yet" in r.reply_text
 
@@ -438,7 +446,8 @@ def test_the_lock_case_excerpt_covers_the_conversation_masked() -> None:
     desk.step_ups(*WRONG)
     [packet] = desk.cases.opened
     assert "[DOB]" in packet.excerpt and "1958" not in packet.excerpt
-    assert "identity check submitted" in packet.excerpt  # the form, never its values
+    # It covers the conversation: the chat turn and all three attempts, never their values.
+    assert packet.excerpt.count("identity check submitted") == 3
 
 
 @pytest.mark.parametrize(
@@ -611,3 +620,13 @@ def test_issue_116_a_malformed_last_four_counts_nothing(last4: str) -> None:
     assert desk.identity.checks == 0 and desk.state().session.failed_attempts == 0
     assert r.step_up_required  # still pending: the form is shown again
     assert desk.audit.rows[-1].event is AuditEvent.REFUSED
+
+
+# ---------- review follow-ups on PR #113 ----------
+def test_a_step_up_on_a_session_that_never_logged_in_is_told_to_log_in() -> None:
+    desk = Desk()
+    desk.conv = desk.runner.start("SPR-1001")  # bound, no login (until contracts 0.7.0)
+    put_pending_confirmation(desk.runner, desk.conv)
+    r = desk.runner.step_up(desk.conv, *RIGHT)
+    assert r.outcome is Outcome.NOT_PERMITTED and "log in" in r.reply_text.lower()
+    assert desk.identity.checks == 0

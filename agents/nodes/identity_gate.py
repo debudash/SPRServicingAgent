@@ -40,14 +40,14 @@ def make(deps: Deps) -> NodeFn:
             return {"gate": GateResult.LOCKED}
         if s.gate_b_passed:
             return {"gate": GateResult.VERIFIED}
-        if not (deps.turn.step_up and s.authenticated and creds is not None and creds.complete):
+        dob, last4 = (creds.dob, creds.last4) if creds is not None else (None, None)
+        if not (deps.turn.step_up and s.authenticated and dob is not None and last4 is not None):
             # A chat turn: the login is enough for the account (ADR 0007). A session bound
             # without a login (DeskRunner.start, until contracts 0.7.0) gets ASK: log in first.
             return {"gate": GateResult.LOGGED_IN if s.authenticated else GateResult.ASK}
 
-        assert creds.dob is not None and creds.last4 is not None  # complete, checked above
         deps.turn.record(Node.IDENTITY_GATE, Step.VERIFY_IDENTITY)
-        if deps.identity.check_challenge(s.customer_id, creds.dob, creds.last4):
+        if deps.identity.check_challenge(s.customer_id, dob, last4):
             audit(state, AuditEvent.GATE_B_PASSED, s.failed_attempts)
             return {"session.gate_b_passed": True, "gate": GateResult.PASSED}
 
