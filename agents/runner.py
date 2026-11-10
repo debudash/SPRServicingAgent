@@ -61,6 +61,37 @@ def _credential_in_play(state: ConversationState) -> bool:
     return bool(said) and DOB_MASK in said[-1]
 
 
+def _fresh_turn(
+    prior: ConversationState, turn_no: int, started: float, customer_text: str
+) -> ConversationState:
+    """A new turn's starting state: per-turn results cleared, the runner's own fields advanced,
+    the customer's (masked) text appended. The one reset every turn uses, through the graph or
+    refused before it.
+
+    Review of PR #61: the gate decision, the account view and the case are this turn's, so one
+    turn's decision never stands in for the next turn's check. Issue #115 (found by /code-review
+    on PR #113): the refused step-up built its state by hand and skipped this reset.
+    """
+    return prior.model_copy(
+        update={
+            "turn": turn_no,
+            "budgets": Budgets(
+                turn_started_monotonic=started, cost_micros=prior.budgets.cost_micros
+            ),
+            "intent": None,
+            "gate": None,
+            "account_view": None,
+            "case_packet": None,
+            "knowledge_answer": None,
+            "reply": None,
+            "transcript": [
+                *prior.transcript,
+                TranscriptEntry(role="customer", turn=turn_no, text=customer_text),
+            ],
+        }
+    )
+
+
 class GraphDeskRunner:
     def __init__(
         self,
@@ -154,27 +185,7 @@ class GraphDeskRunner:
             identity=self._stores.identity,
             cases=self._stores.cases,
         )
-        # A fresh turn: per-turn results cleared, the runner's own fields advanced.
-        state = prior.model_copy(
-            update={
-                "turn": turn_no,
-                "budgets": Budgets(
-                    turn_started_monotonic=started, cost_micros=prior.budgets.cost_micros
-                ),
-                # Review of PR #61: the gate decision, the account view and the case are this
-                # turn's, so one turn's decision never stands in for the next turn's check.
-                "intent": None,
-                "gate": None,
-                "account_view": None,
-                "case_packet": None,
-                "knowledge_answer": None,
-                "reply": None,
-                "transcript": [
-                    *prior.transcript,
-                    TranscriptEntry(role="customer", turn=turn_no, text=text),
-                ],
-            }
-        )
+        state = _fresh_turn(prior, turn_no, started, text)
 
         outcome_state: ConversationState | None = None
         try:
@@ -243,7 +254,7 @@ class GraphDeskRunner:
         still writes its one audit row, and keeps the transcript honest about what happened."""
         conversation_id = prior.conversation_id
         turn_no = self._next_turn(conversation_id)
-        state = prior.model_copy(update={"turn": turn_no})
+        state = _fresh_turn(prior, turn_no, ctx.started, STEP_UP_ENTRY)  # issue #115
         self._audit.append(
             conversation_id=conversation_id,
             turn=turn_no,
@@ -255,8 +266,7 @@ class GraphDeskRunner:
         self._states[conversation_id] = state.model_copy(
             update={
                 "transcript": [
-                    *prior.transcript,
-                    TranscriptEntry(role="customer", turn=turn_no, text=STEP_UP_ENTRY),
+                    *state.transcript,
                     TranscriptEntry(role="desk", turn=turn_no, text=text),
                 ]
             }

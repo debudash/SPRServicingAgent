@@ -586,3 +586,15 @@ def test_issue_114_a_last_four_after_a_dob_turn_is_still_masked() -> None:
     desk = Desk(IntentKind.OTHER, IntentKind.OTHER)
     desk.talk("SPR-1001", "My date of birth is 1958-03-14.", "7823")
     assert "7823" not in desk.everything_kept() and "1958-03-14" not in desk.everything_kept()
+
+
+# ---------- #115: a refused step-up kept the previous turn's gate, account view and case ----------
+# Found by /code-review on PR #113 (spec): one turn's decision never stands in for the next.
+def test_issue_115_a_refused_step_up_carries_no_earlier_turn_results() -> None:
+    desk = Desk(IntentKind.ACCOUNT_INFO)
+    [balance] = desk.talk("SPR-1001", "What's my balance?")
+    assert balance.outcome is Outcome.ANSWERED
+    desk.runner.step_up(desk.conv, *RIGHT)  # nothing pending: refused
+    state = desk.state()
+    assert state.gate is None and state.account_view is None and state.case_packet is None
+    assert state.reply is None or "87,450.62" not in state.reply.text
