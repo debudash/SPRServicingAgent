@@ -6,7 +6,7 @@ fails the conversation closed instead of being interpreted.
 
 import hashlib
 import json
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -354,6 +354,31 @@ class CaseReason(StrEnum):
     # Requests with no proposal (a waiver asked before any amount, RMD, hardship) get their own
     # reasons when they are built.
     WITHDRAWAL_REVIEW = "withdrawal_review"
+    # 0.6.2 (B4): requests only a person may decide, with no proposal of their own.
+    WAIVER_REQUEST = "waiver_request"  # FR-13, NG-01: a waiver is always a human's decision (D-03)
+    HARDSHIP = "hardship"  # FR-14: no general hardship waiver; a servicing case on request
+    RMD = "rmd"  # FR-15, PG-07: explained from the documents, then escalated
+    FULL_SURRENDER = "full_surrender"  # NG-07: a full surrender always goes to a person
+
+
+class CaseStatus(StrEnum):
+    """0.6.2 (B4): where a case stands. The store's `cases.status` column holds these values."""
+
+    OPEN = "open"
+    INFO_REQUESTED = "info_requested"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CLOSED = "closed"
+
+
+# 0.6.2: a reviewer decides an open case, or one waiting on information (FR-17). What the decision
+# makes of it; approved and rejected are final.
+CASE_DECIDABLE = frozenset({CaseStatus.OPEN, CaseStatus.INFO_REQUESTED})
+DECISION_CASE_STATUS: dict[Decision, CaseStatus] = {
+    Decision.APPROVE: CaseStatus.APPROVED,
+    Decision.REJECT: CaseStatus.REJECTED,
+    Decision.REQUEST_INFO: CaseStatus.INFO_REQUESTED,
+}
 
 
 class CasePacket(Message):
@@ -387,6 +412,35 @@ class CasePacket(Message):
             self.quote is None or self.proposal_id is None
         ):
             raise ValueError("a withdrawal review names its proposal and carries its quote")
+        return self
+
+
+class CaseSummary(Message):
+    """0.6.2: one row of the review queue (FR-17). The packet itself comes from `CaseStore.get`."""
+
+    case_id: str
+    customer_id: str
+    opened_for: CaseReason
+    status: CaseStatus
+    opened_at: datetime
+    proposal_id: str | None = None
+    decided_by: str | None = None  # "human:<reviewer_id>" once decided
+
+
+class ReviewResult(Message):
+    """0.6.2: what a reviewer's decision did (FR-17, FR-18). `reference` is the transaction ID when
+    the approval executed a withdrawal, else the case ID."""
+
+    case_id: str
+    decision: Decision
+    outcome: Outcome
+    reference: str
+    text: str
+
+    @model_validator(mode="after")
+    def _only_an_approval_executes(self) -> "ReviewResult":
+        if self.outcome is Outcome.EXECUTED and self.decision is not Decision.APPROVE:
+            raise ValueError("only an approval executes a withdrawal (FR-17)")
         return self
 
 

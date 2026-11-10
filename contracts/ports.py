@@ -30,14 +30,18 @@ from contracts.messages import (
     AccountView,
     Approval,
     CasePacket,
+    CaseStatus,
+    CaseSummary,
     Citation,
     Confirmation,
     Execution,
+    HumanDecision,
     Message,
     Proposal,
     ProposalStatus,
     Quote,
     QuoteRefusal,
+    ReviewResult,
 )
 from contracts.outcomes import Outcome
 from contracts.tools import Node, Step
@@ -163,8 +167,33 @@ class CaseStore(Protocol):
         """Persist a new case. The caller picks `case_id`; a duplicate ID raises.
 
         The packet must already be scrubbed (FR-23): a precondition on the caller, checked by the
-        restricted-field property test.
+        restricted-field property test. The packet's `proposal_id` is stored with the case.
         """
+        ...
+
+
+class CaseReview(Protocol):
+    """0.6.2 (B4): the reviewer's reads and decision on the stored cases. A separate port so the
+    existing CaseStore implementations stay valid (ADR 0001); the SQLite store implements both."""
+
+    def get(self, case_id: str) -> CasePacket | None:
+        """The stored packet, or None."""
+        ...
+
+    def list_cases(
+        self, status: CaseStatus | None = None, customer_id: str | None = None
+    ) -> list[CaseSummary]:
+        """Cases, oldest first, optionally only those with this status or for this customer."""
+        ...
+
+    def status(self, case_id: str) -> CaseStatus:
+        """The case's status. Raises KeyError for an unknown case."""
+        ...
+
+    def decide(self, decision: HumanDecision) -> None:
+        """Record a reviewer's decision: status from `DECISION_CASE_STATUS`, `decided_by`
+        "human:<reviewer_id>", and the time. Only a case in `CASE_DECIDABLE` can be decided;
+        anything else raises ValueError and writes nothing. Raises KeyError for an unknown case."""
         ...
 
 
@@ -302,6 +331,30 @@ class DeskRunner(Protocol):
 
 
 # ---------- login and the step-up (ADR 0007; 0.6.0) ----------
+class ReviewDesk(Protocol):
+    """0.6.2 (B4, FR-17): the human reviewer's side of the desk. Lanes outside agents/ (the UI,
+    evals) call this, never the stores.
+
+    `decide` on a withdrawal review (the packet names its proposal) runs the same money path as
+    B3 (ARCHITECTURE 3.4): approve records `Approval(approver="human:<reviewer_id>")` with a token
+    bound to that proposal's hash and executes it through the Ledger once (FR-08 to FR-10, GR-18).
+    The kill switch still applies (FR-26): a refused execution leaves the case open with the
+    reason. Reject voids the proposal; request_info leaves it with the person. On any other case
+    (no proposal: locked, third party, waiver, hardship, RMD, full surrender) the decision is
+    recorded and no money moves: the reviewer acts outside the desk (NG-01, NG-07). Every decision
+    writes a `human_decided` audit row in the case's conversation. A case not in `CASE_DECIDABLE`
+    raises ValueError.
+    """
+
+    def queue(
+        self, status: CaseStatus | None = None, customer_id: str | None = None
+    ) -> list[CaseSummary]: ...
+
+    def case(self, case_id: str) -> CasePacket | None: ...
+
+    def decide(self, decision: HumanDecision) -> ReviewResult: ...
+
+
 class PasswordCheck(Protocol):
     def check_password(self, customer_id: str, password: str) -> bool:
         """The simulated upstream login. True only for the customer's own password, compared in
