@@ -9,6 +9,10 @@ or removed ones.
 
 The one exception so far is 0.4.0 (owner decision, issue #80): `CasePacket.customer_id` became
 required, a tightening made before any case had been stored.
+
+0.6.0 (ADR 0007) is additive: the login and step-up ports sit beside the B2 ones. The next version
+tightens them (an account view needs a login, the step-up needs a login, `start` is for guests
+only) once the lanes comply (#102, #103), the same way 0.4.0 was made.
 """
 
-CONTRACTS_VERSION = "0.5.0"
+CONTRACTS_VERSION = "0.6.0"
