@@ -116,9 +116,25 @@ def test_case_is_well_formed(kind: str, case: dict[str, Any]) -> None:
         assert case["customer"], "only a logged-in customer can step up"
 
 
+def pinned_rules(cases: list[dict[str, Any]]) -> set[str]:
+    """The rules pinned by cases that run. Issue #118 (found by /code-review on PR #117): retired
+    and pending cases counted too, so a rule held only by a case that never runs passed."""
+    return {rule for c in cases if c.get("status", "active") == "active" for rule in c["rules"]}
+
+
+# Rules whose only case waits on data (`pending_data`): named here, with the reason, so the gap is
+# visible and reviewed rather than hidden by counting a case that never runs (#118).
+AWAITING_DATA = {
+    "GR-04": "BH-B4-02 needs the superseded fee-schedule version (PG-05)",
+}
+
+
 def test_every_rule_is_pinned_by_a_case() -> None:
-    pinned = {rule for _, c in ALL for rule in c["rules"]}
-    assert RULES - pinned == set(), f"rules with no case: {sorted(RULES - pinned)}"
+    cases = [c for _, c in ALL]
+    unpinned = RULES - pinned_rules(cases)
+    assert unpinned == set(AWAITING_DATA), f"rules with no running case: {sorted(unpinned)}"
+    for rule in AWAITING_DATA:  # each exception really rests on a pending case
+        assert any(rule in c["rules"] and c.get("status") == "pending_data" for c in cases), rule
 
 
 QUOTED = [c for _, c in ALL if "quote" in c]
@@ -153,3 +169,14 @@ def test_a_retired_case_says_why() -> None:
     for _, case in ALL:
         if case.get("status") == "retired":
             assert "Retired" in case.get("note", ""), case["id"]
+
+
+# ---------- #118: the rule-pinning check counted retired and pending cases ----------
+# Found by /code-review on PR #117 (spec): a rule held only by a case that never runs passed.
+def test_issue_118_only_active_cases_pin_a_rule() -> None:
+    cases: list[dict[str, Any]] = [
+        {"rules": ["GR-01"], "status": "retired"},
+        {"rules": ["GR-02"], "status": "pending_data"},
+        {"rules": ["GR-03"]},
+    ]
+    assert pinned_rules(cases) == {"GR-03"}
