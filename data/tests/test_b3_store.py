@@ -648,3 +648,29 @@ def test_adapters_conform_to_the_b3_ports(conn: sqlite3.Connection, tmp_path: Pa
         ChromaKnowledgeSearch(tmp_path / "chroma", HashingEmbedding())
     )
     assert all([quotes, proposals, approvals, ledger, policy])
+
+
+# ---------- #99: move could set approved, confirmed or executed around their real paths ----------
+# Found by /code-review on PR #96 (spec): move(EXECUTED) left an "executed" proposal, no money.
+@pytest.mark.parametrize(
+    ("setup", "target"),
+    [
+        ("quoted", ProposalStatus.CONFIRMED),
+        ("confirmed", ProposalStatus.APPROVED),
+        ("approved", ProposalStatus.EXECUTED),
+    ],
+)
+def test_issue_99_move_cannot_stand_in_for_confirm_approve_or_execute(
+    conn: sqlite3.Connection, setup: str, target: ProposalStatus
+) -> None:
+    store = SqliteProposalStore(conn)
+    if setup == "quoted":
+        store.save(_proposal(conn))
+    else:
+        _confirmed(conn)
+    if setup == "approved":
+        _approve(conn)
+    before = store.status("P-1")
+    with pytest.raises(ValueError):
+        store.move("P-1", target)
+    assert store.status("P-1") is before

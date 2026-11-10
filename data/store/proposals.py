@@ -29,6 +29,9 @@ PROPOSAL_COLUMNS = (
 )
 
 
+_MOVE_TARGETS = frozenset({ProposalStatus.ESCALATED, ProposalStatus.VOIDED})
+
+
 def _now() -> str:
     # Wall-clock event time, like the audit log's `at`; business dates come from the as-of clock.
     return datetime.now(UTC).isoformat(timespec="seconds")
@@ -132,6 +135,13 @@ class SqliteProposalStore:
             )
 
     def move(self, proposal_id: str, status: ProposalStatus) -> None:
+        # Issue #99 (found by /code-review on PR #96): move accepted every target the transition
+        # table allows, so it could mark a proposal confirmed, approved or executed without the
+        # yes, the approval row or the ledger. Those three have their own paths (confirm,
+        # ApprovalStore.record, Ledger.execute) carrying the checks; move only sends a proposal to
+        # a human or voids it.
+        if status not in _MOVE_TARGETS:
+            raise ValueError(f"move cannot set {status}; it has its own path")
         with immediate(self._conn):
             write_status(self._conn, proposal_id, read_status(self._conn, proposal_id), status)
 
