@@ -9,8 +9,15 @@ import uuid
 from typing import Any
 
 from agents.guards.credentials import scrub
-from agents.nodes.common import Deps, NodeFn
-from contracts.messages import CasePacket, CaseReason, IntentKind
+from agents.nodes.common import Deps, NodeFn, is_live
+from contracts.messages import (
+    CasePacket,
+    CaseReason,
+    Decision,
+    IntentKind,
+    ProposalStatus,
+    ThresholdTier,
+)
 from contracts.ports import AuditEvent
 from contracts.state import ConversationState, GateResult
 from contracts.tools import Node, Step
@@ -35,7 +42,37 @@ _WHY: dict[CaseReason, tuple[str, str]] = {
         "Someone other than the owner asked about or for action on the account.",
         "Verify the requester's authority offline, or contact the owner directly.",
     ),
+    CaseReason.WITHDRAWAL_REVIEW: (
+        "A withdrawal needs a person's review: see the rule flags and Compliance's decision.",
+        "Review the proposal and its quote, then approve or reject it.",
+    ),
 }
+
+
+def needs_review(state: ConversationState) -> bool:
+    """#89: this turn sent the proposal to a person. The rules flagged it (D-02, D-07, FR-26),
+    Compliance held or escalated it (FR-11, FR-12), or the customer asked to go ahead with a
+    human-tier quote in the quoting turn (GR-19, BH-B3-05). Each is this turn's own result."""
+    proposal = state.proposal
+    if proposal is None:
+        return False
+    flags = state.rule_flags
+    if flags is not None and flags.proposal_id == proposal.proposal_id and flags.flags:
+        return True
+    review = state.approval
+    if (
+        review is not None
+        and review.proposal_id == proposal.proposal_id
+        and review.decision in (Decision.HOLD, Decision.ESCALATE)
+    ):
+        return True
+    intent = state.intent
+    return (
+        proposal.quoted_turn == state.turn
+        and proposal.quote.threshold_tier is ThresholdTier.HUMAN
+        and intent is not None
+        and intent.explicit_yes
+    )
 
 
 def reason_for(state: ConversationState) -> CaseReason | None:
@@ -47,6 +84,8 @@ def reason_for(state: ConversationState) -> CaseReason | None:
         return CaseReason.LOCKED
     if state.intent is not None and state.intent.kind is IntentKind.THIRD_PARTY:
         return CaseReason.THIRD_PARTY
+    if needs_review(state):
+        return CaseReason.WITHDRAWAL_REVIEW
     return None
 
 
@@ -57,15 +96,32 @@ def make(deps: Deps) -> NodeFn:
         if reason is None or customer_id is None:  # routing only sends a turn with a reason
             return {}
         summary, recommendation = _WHY[reason]
+        review: dict[str, Any] = {}
+        proposal = state.proposal
+        if reason is CaseReason.WITHDRAWAL_REVIEW and proposal is not None:
+            decision = state.compliance
+            review = {
+                "quote": proposal.quote,
+                "proposal_id": proposal.proposal_id,
+                "rule_flags": state.rule_flags.flags if state.rule_flags else frozenset(),
+                "compliance_reasons": decision.reasons if decision else (),
+                "compliance_decision": decision.decision if decision else None,
+                "signals": decision.signals if decision else frozenset(),
+            }
+            # With a person now: nothing on this path may confirm or approve it (the store
+            # refuses Compliance once escalated). A recorded hold or escalate already moved it.
+            if is_live(deps.proposals, proposal):
+                deps.proposals.move(proposal.proposal_id, ProposalStatus.ESCALATED)
         packet = CasePacket(
             case_id=f"CASE-{uuid.uuid4().hex[:8].upper()}",
             conversation_id=state.conversation_id,
             customer_id=customer_id,
             opened_for=reason,
             request_summary=summary,
-            quote=None,
+            quote=review.pop("quote", None),
             excerpt=excerpt(state),
             recommendation=recommendation,
+            **review,
         )
         deps.turn.record(Node.CASE, Step.CREATE_CASE)
         # Issue #73 (found by /code-review on PR #72): a store error escaped the graph, and the

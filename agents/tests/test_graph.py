@@ -135,7 +135,11 @@ def test_product_question_is_answered_with_citation() -> None:  # G-B1-01/02/03/
     assert search.queries == [("Is the year 5 charge 4%?", AS_OF)]
     assert [row.event for row in audit.rows] == [AuditEvent.ANSWERED]
     assert audit.rows[0].versions["documents"] == {"fee_schedule": 1}
-    assert audit.rows[0].versions["prompts"] == {"concierge": "3", "knowledge": "1"}
+    assert audit.rows[0].versions["prompts"] == {
+        "concierge": "3",
+        "knowledge": "1",
+        "compliance": "1",
+    }
 
 
 def test_unsupported_question_is_no_source() -> None:  # G-B1-04

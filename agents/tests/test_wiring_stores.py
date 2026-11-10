@@ -69,7 +69,9 @@ def test_the_right_step_up_passes_over_the_real_stores(tmp_path: Path) -> None:
     conv = _login(runner, "SPR-1001", "margaret-demo")
     put_pending_confirmation(runner, conv)
     r = runner.step_up(conv, date(1958, 3, 14), "7823")
-    assert r.outcome is Outcome.ANSWERED and r.steps == (Step.VERIFY_IDENTITY,)
+    assert r.steps[0] is Step.VERIFY_IDENTITY
+    # #89: the pass continues the withdrawal; with no money path wired, it goes to a person (FR-26).
+    assert r.outcome is Outcome.NEEDS_HUMAN
 
 
 def test_untrusted_account_over_the_real_stores(tmp_path: Path) -> None:

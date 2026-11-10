@@ -6,22 +6,27 @@ The only module in `agents/` that imports from `data/`; everything else depends 
 import json
 import os
 import sqlite3
+from dataclasses import replace
 from datetime import date
+from functools import partial
 from pathlib import Path
 
 from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
 
-from agents.nodes.common import Stores
+from agents.nodes.common import MoneyPath, Stores
 from agents.runner import GraphDeskRunner
-from contracts.ports import LoginDeskRunner
+from contracts.ports import LoginDeskRunner, PolicySource
+from contracts.tokens import approval_token
 from data.identity import SqliteIdentityCheck
 from data.knowledge_index.index import ChromaKnowledgeSearch
+from data.knowledge_index.policy import ChromaPolicySource
 from data.settings import load_settings
 from data.store.accounts import SqliteAccountStore
 from data.store.audit import SqliteAuditLog
 from data.store.cases import SqliteCaseStore
 from data.store.db import open_db
-from data.store.proposals import SqliteProposalStore
+from data.store.ledger import SqliteLedger
+from data.store.proposals import SqliteApprovalStore, SqliteProposalStore
 from data.store.quotes import SqliteQuoteService
 from data.store.seed import STARTER_KIT, seed_demo_logins, seed_starter_kit
 
@@ -57,11 +62,33 @@ def build_runner() -> LoginDeskRunner:
     # real date, not the as-of date (PRD D-04, DESK_AS_OF). Versions in force and date rules
     # follow the clock, so the wiring passes the setting.
     as_of = date.fromisoformat(settings.as_of)
+    money = money_path(
+        conn,
+        ChromaPolicySource(search),
+        secret=settings.approval_secret,
+        execution_enabled=settings.execution_enabled,
+    )
     return GraphDeskRunner(
         search=search,
         audit=SqliteAuditLog(conn),
         clock=lambda: as_of,
-        stores=build_stores(conn),
+        stores=replace(build_stores(conn), money=money),
+    )
+
+
+def money_path(
+    conn: sqlite3.Connection, policy: PolicySource, *, secret: bytes, execution_enabled: bool
+) -> MoneyPath:
+    """#89: Compliance's policy source, the approval store and the ledger over the desk database.
+    The token issuer is bound to the secret here, so the agents lane never holds it."""
+    return MoneyPath(
+        policy=policy,
+        approvals=SqliteApprovalStore(conn),
+        ledger=SqliteLedger(
+            conn, SqliteAuditLog(conn), secret=secret, execution_enabled=execution_enabled
+        ),
+        issue_token=partial(approval_token, secret=secret),
+        execution_enabled=execution_enabled,
     )
 
 

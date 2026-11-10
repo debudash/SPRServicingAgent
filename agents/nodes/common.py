@@ -20,10 +20,13 @@ from contracts.messages import (
 )
 from contracts.ports import (
     AccountStore,
+    ApprovalStore,
     AuditLog,
     CaseStore,
     IdentityCheck,
+    Ledger,
     PasswordCheck,
+    PolicySource,
     ProposalStore,
     QuoteService,
     Usage,
@@ -79,6 +82,8 @@ class TurnContext:
     # proposal (FR-07), and the account it was quoted against gives the reply its balance.
     quote_refusal: QuoteRefusalReason | None = None
     quote_basis: AccountView | None = None
+    # #89: the policy versions Compliance cited, for the executed row's audit (FR-10).
+    policy_versions: dict[str, int] = field(default_factory=dict)
 
     def record(self, node: Node, step: Step) -> None:
         self.steps.append(step)
@@ -110,6 +115,25 @@ class Stores:
     passwords: PasswordCheck
     quotes: QuoteService  # #88: the quote tool's records (FR-05)
     proposals: ProposalStore  # #88: the propose tool, and confirm's status moves
+    # #89: what reviews, approves and executes. None means this desk cannot move money: no
+    # proposal is approved or executed, and the kill switch reads off (FR-26).
+    money: "MoneyPath | None" = None
+
+
+@dataclass(frozen=True)
+class MoneyPath:
+    """The second half of ARCHITECTURE 3.3 (#89), built together by the wiring.
+
+    `issue_token` is `contracts.tokens.approval_token` bound to APPROVAL_SECRET: the agents lane
+    issues tokens without ever holding the secret. `execution_enabled` is the FR-26 kill switch;
+    the ledger enforces it again on its own.
+    """
+
+    policy: PolicySource  # Compliance's one tool, get_policy (FR-22)
+    approvals: ApprovalStore
+    ledger: Ledger
+    issue_token: Callable[[str, str], str] = field(repr=False)
+    execution_enabled: bool = True
 
 
 @dataclass
@@ -124,6 +148,7 @@ class Deps:
     identity: IdentityCheck
     cases: CaseStore
     proposals: ProposalStore
+    money: MoneyPath | None = None  # #89
 
 
 def invoke_structured[T: BaseModel](
