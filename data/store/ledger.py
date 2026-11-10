@@ -73,14 +73,15 @@ class SqliteLedger:
             "WHERE proposal_id = ? AND decision = 'approve' ORDER BY rowid DESC LIMIT 1",
             (proposal_id,),
         ).fetchone()
+        if approving is None:
+            raise ExecutionRefused(ExecutionRefusedReason.TOKEN_INVALID)
+        approval_id, approved_by, stored_token, used_at_turn = approving
         if (
-            approving is None
-            or approving[3] is not None
-            or not tokens_match(str(approving[2]), expected)
+            used_at_turn is not None
+            or not tokens_match(str(stored_token), expected)
             or not tokens_match(token, expected)
         ):
             raise ExecutionRefused(ExecutionRefusedReason.TOKEN_INVALID)
-        approval_id, approved_by = str(approving[0]), str(approving[1])
 
         # 6. The stored figures must still hash to the hash that was approved. Figures that no
         #    longer add up fail the Quote contract: that is a changed proposal too.
@@ -135,9 +136,10 @@ class SqliteLedger:
             turn=turn,
             node=Node.EXECUTE,
             event=AuditEvent.EXECUTED,
-            payload={
+            payload={  # FR-10: which approval moved the money
                 "proposal_id": proposal_id,
                 "transaction_id": transaction_id,
+                "approval_id": approval_id,
                 "approved_by": approved_by,
             },
             versions=versions,

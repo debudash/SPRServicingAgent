@@ -434,6 +434,7 @@ def test_an_approved_proposal_executes_once_with_its_audit_row(conn: sqlite3.Con
     assert row.payload == {
         "proposal_id": "P-1",
         "transaction_id": execution.transaction_id,
+        "approval_id": "A-P-1-compliance",
         "approved_by": "compliance",
     }
     assert row.versions == VERSIONS
