@@ -69,6 +69,9 @@ RESTRICTED_TEXT = (
 
 STEP_UP_PASSED_TEXT = "Thank you, that's confirmed."
 NO_STEP_UP_TEXT = "There's nothing waiting for an identity check right now, so nothing was checked."
+STEP_UP_INCOMPLETE_TEXT = (
+    "Please give your date of birth and the four digits of your SSN; nothing was checked."
+)
 
 
 def _failed_text(attempts: int) -> str:

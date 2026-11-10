@@ -598,3 +598,16 @@ def test_issue_115_a_refused_step_up_carries_no_earlier_turn_results() -> None:
     state = desk.state()
     assert state.gate is None and state.account_view is None and state.case_packet is None
     assert state.reply is None or "87,450.62" not in state.reply.text
+
+
+# ---------- #116: a malformed step-up counted as a failed identity attempt ----------
+# Found by /code-review on PR #113 (both axes). ADR 0005: nothing usable is not an attempt.
+@pytest.mark.parametrize("last4", ["", "123", "12345", "12a4", " 782"])
+def test_issue_116_a_malformed_last_four_counts_nothing(last4: str) -> None:
+    desk = Desk()
+    desk.login("SPR-1001")
+    [r] = desk.step_ups((RIGHT[0], last4))
+    assert r.outcome is Outcome.NOT_PERMITTED
+    assert desk.identity.checks == 0 and desk.state().session.failed_attempts == 0
+    assert r.step_up_required  # still pending: the form is shown again
+    assert desk.audit.rows[-1].event is AuditEvent.REFUSED

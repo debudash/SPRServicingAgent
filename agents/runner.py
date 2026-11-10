@@ -9,6 +9,7 @@ the transcript records that the form was submitted, never what it held.
 """
 
 import logging
+import re
 import time
 import uuid
 from collections.abc import Callable, Mapping
@@ -21,7 +22,7 @@ from agents.graph import build_graph
 from agents.guards.credentials import DOB_MASK, Credentials, capture
 from agents.llm import chat_model, load_model_map
 from agents.nodes.common import Deps, Stores, TurnContext
-from agents.nodes.respond import NO_STEP_UP_TEXT, UNAVAILABLE_TEXT
+from agents.nodes.respond import NO_STEP_UP_TEXT, STEP_UP_INCOMPLETE_TEXT, UNAVAILABLE_TEXT
 from agents.tools.registry import ToolRegistry
 from contracts import CONTRACTS_VERSION
 from contracts.outcomes import Outcome
@@ -43,6 +44,7 @@ logger = logging.getLogger(__name__)
 _MODEL_ROLES = (Role.CONCIERGE, Role.KNOWLEDGE)
 # What the transcript keeps of a step-up: that the form was used, never its values (ADR 0007).
 STEP_UP_ENTRY = "[identity check submitted]"
+_LAST4 = re.compile(r"\d{4}")
 
 
 def _credential_in_play(state: ConversationState) -> bool:
@@ -155,6 +157,11 @@ class GraphDeskRunner:
         ctx = TurnContext(started=time.monotonic())
         if not step_up_pending(prior):
             return self._refused_turn(prior, ctx, NO_STEP_UP_TEXT)
+        # Issue #116 (found by /code-review on PR #113): any last4 went to the check, so an
+        # empty or malformed value (a caller's bug, never a real answer) counted as a failed
+        # attempt and could lock the customer out. Nothing usable is not an attempt (ADR 0005).
+        if not _LAST4.fullmatch(last4):
+            return self._refused_turn(prior, ctx, STEP_UP_INCOMPLETE_TEXT)
         ctx.step_up = True
         ctx.credentials = Credentials(dob=dob, last4=last4)
         return self._turn(prior, STEP_UP_ENTRY, ctx)
@@ -277,6 +284,7 @@ class GraphDeskRunner:
             reply_text=text,
             outcome=Outcome.NOT_PERMITTED,
             latency_ms=int((time.monotonic() - ctx.started) * 1000),
+            step_up_required=step_up_pending(self._states[conversation_id]),
         )
 
     def _audit_fallback(self, state: ConversationState, ctx: TurnContext) -> None:
