@@ -2,6 +2,8 @@
 
 import re
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
@@ -40,3 +42,17 @@ def open_db(path: str | Path) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys = ON")
     migrate(conn)
     return conn
+
+
+@contextmanager
+def immediate(conn: sqlite3.Connection) -> Iterator[None]:
+    """One write transaction: `BEGIN IMMEDIATE`, then COMMIT, or ROLLBACK on any exception
+    (an interrupt included, as in audit.py). Reads inside it see a state no other writer can change
+    before the commit. Not reentrant: SQLite has no nested BEGIN."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    conn.execute("COMMIT")
