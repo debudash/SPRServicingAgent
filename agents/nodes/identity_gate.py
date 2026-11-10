@@ -11,6 +11,7 @@ the state checks the two against each other (issue #62).
 from typing import Any
 
 from agents.nodes.common import Deps, NodeFn
+from contracts.messages import ProposalStatus
 from contracts.ports import AuditEvent
 from contracts.state import MAX_FAILED_CHALLENGES, ConversationState, GateResult
 from contracts.tools import Node, Step
@@ -55,6 +56,14 @@ def make(deps: Deps) -> NodeFn:
         audit(state, AuditEvent.GATE_B_FAILED, attempts)
         if attempts >= MAX_FAILED_CHALLENGES:
             audit(state, AuditEvent.LOCKED, attempts)
+            # Review on PR #129: the lock left the confirmed proposal confirmed in the store.
+            # Nothing in a locked session can pass the step-up, so it could never complete;
+            # void it rather than leave a confirmed proposal for any later path to find (D-08).
+            yes = state.confirmation
+            if yes is not None and (
+                deps.proposals.status(yes.proposal_id) is ProposalStatus.CONFIRMED
+            ):
+                deps.proposals.move(yes.proposal_id, ProposalStatus.VOIDED)
             return {
                 "session.failed_attempts": attempts,
                 "session.locked": True,

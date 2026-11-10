@@ -11,8 +11,23 @@ from pydantic import BaseModel
 
 from agents.guards.credentials import Credentials
 from agents.tools.registry import ToolRegistry
-from contracts.messages import IntentKind
-from contracts.ports import AccountStore, AuditLog, CaseStore, IdentityCheck, PasswordCheck, Usage
+from contracts.messages import (
+    AccountView,
+    IntentKind,
+    Proposal,
+    ProposalStatus,
+    QuoteRefusalReason,
+)
+from contracts.ports import (
+    AccountStore,
+    AuditLog,
+    CaseStore,
+    IdentityCheck,
+    PasswordCheck,
+    ProposalStore,
+    QuoteService,
+    Usage,
+)
 from contracts.state import MAX_TOOL_CALLS_PER_TURN, ConversationState
 from contracts.tools import Node, Role, Step
 
@@ -21,6 +36,16 @@ NodeFn = Callable[[ConversationState], dict[str, Any]]
 # Intents answered from the account, so a login and Gate A must hold first (FR-02, ADR 0007).
 # Routing and respond share this one set.
 ACCOUNT_INTENTS = frozenset({IntentKind.ACCOUNT_INFO, IntentKind.VERIFY})
+# Intents that quote or confirm a withdrawal (#88): the same login and Gate A first. A quote
+# needs no step-up; the yes raises it (ADR 0007).
+MONEY_INTENTS = frozenset({IntentKind.WITHDRAWAL, IntentKind.CONFIRM})
+# A proposal still waiting for its yes or its approval (#88). A new quote voids it (GR-18).
+LIVE = frozenset({ProposalStatus.QUOTED, ProposalStatus.CONFIRMED})
+
+
+def is_live(proposals: ProposalStore, proposal: Proposal | None) -> bool:
+    """Whether `proposal` is still live in the store, the one place its status is kept."""
+    return proposal is not None and proposals.status(proposal.proposal_id) in LIVE
 
 
 class BudgetExceeded(Exception):
@@ -50,6 +75,10 @@ class TurnContext:
     credentials: Credentials | None = field(default=None, repr=False)
     # This turn is the step-up form, not a chat message: it skips the Concierge (no text to read).
     step_up: bool = False
+    # #88: what the transaction node learned this turn that is not state. A refused quote is not a
+    # proposal (FR-07), and the account it was quoted against gives the reply its balance.
+    quote_refusal: QuoteRefusalReason | None = None
+    quote_basis: AccountView | None = None
 
     def record(self, node: Node, step: Step) -> None:
         self.steps.append(step)
@@ -79,6 +108,8 @@ class Stores:
     identity: IdentityCheck
     cases: CaseStore
     passwords: PasswordCheck
+    quotes: QuoteService  # #88: the quote tool's records (FR-05)
+    proposals: ProposalStore  # #88: the propose tool, and confirm's status moves
 
 
 @dataclass
@@ -92,6 +123,7 @@ class Deps:
     accounts: AccountStore
     identity: IdentityCheck
     cases: CaseStore
+    proposals: ProposalStore
 
 
 def invoke_structured[T: BaseModel](
@@ -135,7 +167,12 @@ def session_context(state: ConversationState) -> str:
         who = "logged in; step-up check passed"
     else:
         who = "logged in"
-    return f"Session: {who}. Customer turn {state.turn}."
+    # #88: the Concierge needs to know a quote awaits an answer to read "yes" as a confirmation.
+    # No amount or ID: only whether one is waiting.
+    p, c = state.proposal, state.confirmation
+    waiting = p is not None and (c is None or c.proposal_id != p.proposal_id)
+    quote = " A withdrawal quote is waiting for the customer's answer." if waiting else ""
+    return f"Session: {who}.{quote} Customer turn {state.turn}."
 
 
 def narrow(value: object) -> Any:

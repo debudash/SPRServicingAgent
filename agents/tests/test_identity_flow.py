@@ -21,6 +21,8 @@ from agents.testing import (
     MemoryCases,
     MemoryIdentity,
     MemoryPasswords,
+    MemoryProposals,
+    MemoryQuotes,
     ScriptedChatModel,
     put_pending_confirmation,
 )
@@ -107,6 +109,8 @@ class Desk:
                 identity=self.identity,
                 cases=self.cases,
                 passwords=self.passwords,
+                quotes=MemoryQuotes(),
+                proposals=MemoryProposals(),
             ),
         )
 
@@ -430,11 +434,12 @@ def test_issue_74_guest_credentials_with_a_product_question_get_the_answer() -> 
 def test_issue_74_credentials_with_an_unbuilt_request_are_never_answered(
     stepped_up_first: bool,
 ) -> None:
-    desk = Desk(IntentKind.WITHDRAWAL)
+    # A withdrawal was the unbuilt request until #88 built it; a full surrender still is.
+    desk = Desk(IntentKind.FULL_SURRENDER)
     desk.login("SPR-1001")
     if stepped_up_first:  # even a session that passed the step-up gets no unbuilt answer
         desk.step_ups(RIGHT)
-    r = desk.runner.send(desk.conv, "1958-03-14 and 7823, withdraw $2,000 please")
+    r = desk.runner.send(desk.conv, "1958-03-14 and 7823, surrender the whole contract please")
     assert r.outcome is Outcome.NOT_PERMITTED
     assert "yet" in r.reply_text
 
@@ -480,6 +485,7 @@ def test_credentials_are_dropped_on_every_gate_path(session: Session) -> None:
         accounts=desk.accounts,
         identity=desk.identity,
         cases=desk.cases,
+        proposals=MemoryProposals(),
     )
     state = ConversationState(
         conversation_id="CV1",
@@ -503,6 +509,7 @@ def test_logged_in_is_the_gate_for_a_login_without_a_step_up() -> None:
         accounts=desk.accounts,
         identity=desk.identity,
         cases=desk.cases,
+        proposals=MemoryProposals(),
     )
     state = ConversationState(
         conversation_id="CV1",

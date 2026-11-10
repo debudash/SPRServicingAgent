@@ -10,7 +10,7 @@ RULES = {
     "respond": ["GR-10", "GR-20"],
 }
 # Each prompt's version, pinned: a prompt edit must bump its version (it is in every audit row).
-VERSIONS = {"concierge": 2, "knowledge": 1, "respond": 1}
+VERSIONS = {"concierge": 3, "knowledge": 1, "respond": 1}
 DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/\d{2,4}\b")
 
 

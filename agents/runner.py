@@ -25,6 +25,7 @@ from agents.nodes.common import Deps, Stores, TurnContext
 from agents.nodes.respond import NO_STEP_UP_TEXT, STEP_UP_INCOMPLETE_TEXT, UNAVAILABLE_TEXT
 from agents.tools.registry import ToolRegistry
 from contracts import CONTRACTS_VERSION
+from contracts.messages import ProposalStatus
 from contracts.outcomes import Outcome
 from contracts.ports import AuditEvent, AuditLog, KnowledgeSearch, LoginRefused, TurnResult
 from contracts.state import (
@@ -114,6 +115,10 @@ class GraphDeskRunner:
         )
         self._registry = ToolRegistry()
         self._registry.register(ToolName.SEARCH_KB, search.search)
+        # #88: the Transaction role's tools (TOOL_SCOPE); the registry refuses them to other roles.
+        self._registry.register(ToolName.GET_ACCOUNT, stores.accounts.view)
+        self._registry.register(ToolName.QUOTE, stores.quotes.quote)
+        self._registry.register(ToolName.PROPOSE, stores.proposals.save)
         self._states: dict[str, ConversationState] = {}
         self._turns_taken: dict[str, int] = {}
 
@@ -155,7 +160,7 @@ class GraphDeskRunner:
         """The step-up form (ADR 0007). With none pending it counts nothing (NOT_PERMITTED)."""
         prior = self._prior(conversation_id)
         ctx = TurnContext(started=time.monotonic())
-        if not step_up_pending(prior):
+        if not self._step_up_pending(prior):  # issue #131
             return self._refused_turn(prior, ctx, NO_STEP_UP_TEXT)
         # Issue #116 (found by /code-review on PR #113): any last4 went to the check, so an
         # empty or malformed value (a caller's bug, never a real answer) counted as a failed
@@ -165,6 +170,21 @@ class GraphDeskRunner:
         ctx.step_up = True
         ctx.credentials = Credentials(dob=dob, last4=last4)
         return self._turn(prior, STEP_UP_ENTRY, ctx)
+
+    def _step_up_pending(self, state: ConversationState) -> bool:
+        """`step_up_pending`, and the confirmed proposal is still confirmed in the store.
+
+        Issue #131 (found by /code-review on PR #129): the state's yes alone decided it. A turn
+        that failed between voiding the old quote and clearing its yes (a budget stop, a failed
+        save) left a yes for a voided proposal, and the step-up then passed for it. The store is
+        where a proposal's status lives, so the store decides whether the yes still stands.
+        """
+        yes = state.confirmation
+        return (
+            step_up_pending(state)
+            and yes is not None
+            and self._stores.proposals.status(yes.proposal_id) is ProposalStatus.CONFIRMED
+        )
 
     def _prior(self, conversation_id: str) -> ConversationState:
         if conversation_id not in self._states:
@@ -191,6 +211,7 @@ class GraphDeskRunner:
             accounts=self._stores.accounts,
             identity=self._stores.identity,
             cases=self._stores.cases,
+            proposals=self._stores.proposals,
         )
         state = _fresh_turn(prior, turn_no, started, text)
 
@@ -253,7 +274,7 @@ class GraphDeskRunner:
             usage=ctx.usage(),
             latency_ms=int((time.monotonic() - started) * 1000),
             provider_error=ctx.provider_error,
-            step_up_required=step_up_pending(self._states[conversation_id]),
+            step_up_required=self._step_up_pending(self._states[conversation_id]),
         )
 
     def _refused_turn(self, prior: ConversationState, ctx: TurnContext, text: str) -> TurnResult:
@@ -284,7 +305,7 @@ class GraphDeskRunner:
             reply_text=text,
             outcome=Outcome.NOT_PERMITTED,
             latency_ms=int((time.monotonic() - ctx.started) * 1000),
-            step_up_required=step_up_pending(self._states[conversation_id]),
+            step_up_required=self._step_up_pending(self._states[conversation_id]),
         )
 
     def _audit_fallback(self, state: ConversationState, ctx: TurnContext) -> None:

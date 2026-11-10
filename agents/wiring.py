@@ -21,6 +21,8 @@ from data.store.accounts import SqliteAccountStore
 from data.store.audit import SqliteAuditLog
 from data.store.cases import SqliteCaseStore
 from data.store.db import open_db
+from data.store.proposals import SqliteProposalStore
+from data.store.quotes import SqliteQuoteService
 from data.store.seed import STARTER_KIT, seed_demo_logins, seed_starter_kit
 
 
@@ -70,9 +72,12 @@ def build_stores(conn: sqlite3.Connection) -> Stores:
     if load_settings().demo_logins:
         seed_demo_logins(conn)
     identity = SqliteIdentityCheck(conn)
+    accounts = SqliteAccountStore(conn, identity)
     return Stores(
-        accounts=SqliteAccountStore(conn, identity),
+        accounts=accounts,
         identity=identity,
         cases=SqliteCaseStore(conn),
         passwords=identity,
+        quotes=SqliteQuoteService(accounts),  # #88
+        proposals=SqliteProposalStore(conn),
     )

@@ -12,7 +12,19 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable, RunnableLambda
 from pydantic import PrivateAttr
 
-from contracts.messages import AccountView, CasePacket, Confirmation
+from contracts.messages import (
+    AccountView,
+    CasePacket,
+    Confirmation,
+    Proposal,
+    ProposalStatus,
+    Quote,
+    QuoteRefusal,
+    ThresholdTier,
+    check_confirmation,
+    check_transition,
+    proposal_hash,
+)
 
 
 class ScriptedChatModel(BaseChatModel):
@@ -124,15 +136,79 @@ class MemoryPasswords:
         return bool(password) and self._passwords.get(customer_id) == password
 
 
+class MemoryQuotes:
+    """`QuoteService` over fixed results keyed by (customer, amount). Anything else raises
+    KeyError, as the real service does for an unknown customer (#88)."""
+
+    def __init__(self, results: dict[tuple[str, int], Quote | QuoteRefusal] | None = None) -> None:
+        self.results = results or {}
+
+    def quote(self, customer_id: str, amount_cents: int, as_of: date) -> Quote | QuoteRefusal:
+        return self.results[(customer_id, amount_cents)]
+
+
+class MemoryProposals:
+    """`ProposalStore` in memory, with the same rules as the real one (#88)."""
+
+    def __init__(self) -> None:
+        self.proposals: dict[str, Proposal] = {}
+        self.statuses: dict[str, ProposalStatus] = {}
+
+    def save(self, proposal: Proposal) -> None:
+        if proposal.proposal_id in self.proposals:
+            raise ValueError(f"duplicate proposal {proposal.proposal_id}")
+        self.proposals[proposal.proposal_id] = proposal
+        self.statuses[proposal.proposal_id] = ProposalStatus.QUOTED
+
+    def get(self, proposal_id: str) -> Proposal | None:
+        return self.proposals.get(proposal_id)
+
+    def status(self, proposal_id: str) -> ProposalStatus:
+        return self.statuses[proposal_id]
+
+    def confirm(self, confirmation: Confirmation, conversation_id: str) -> None:
+        proposal = self.proposals[confirmation.proposal_id]
+        check_confirmation(proposal, confirmation, conversation_id)
+        check_transition(self.statuses[proposal.proposal_id], ProposalStatus.CONFIRMED)
+        self.statuses[proposal.proposal_id] = ProposalStatus.CONFIRMED
+
+    def move(self, proposal_id: str, status: ProposalStatus) -> None:
+        if status not in (ProposalStatus.ESCALATED, ProposalStatus.VOIDED):  # as the real one, #99
+            raise ValueError(f"move cannot set {status}")
+        check_transition(self.statuses[proposal_id], status)
+        self.statuses[proposal_id] = status
+
+
 def put_pending_confirmation(runner: Any, conversation_id: str) -> None:
-    """Stand in for the confirm node (#88): the customer has said yes to a quote, so a step-up
-    is pending (`contracts.state.step_up_pending`). Test-only: it writes the runner's state
-    directly."""
+    """Stand in for a quote and its yes (#88), so a step-up is pending. Test-only: it saves and
+    confirms a proposal in the runner's store, which decides whether the yes still stands
+    (#131), and writes the runner's state directly."""
     state = runner._states[conversation_id]
+    customer = state.session.customer_id or "SPR-TEST"
+    quote = Quote(
+        amount_cents=345_600,
+        free_cents=0,
+        excess_cents=345_600,
+        rate_bp=0,
+        charge_cents=0,
+        net_cents=345_600,
+        contract_year=7,
+        threshold_tier=ThresholdTier.SELF_SERVICE,
+        irs_notice=False,
+    )
+    quoted_turn = max(state.turn, 1)
+    proposal = Proposal(
+        proposal_id=f"P-TEST-{conversation_id}",
+        conversation_id=conversation_id,
+        customer_id=customer,
+        quote=quote,
+        as_of=state.as_of,
+        quoted_turn=quoted_turn,
+        hash=proposal_hash(customer, quote, state.as_of),
+    )
+    yes = Confirmation(proposal_id=proposal.proposal_id, amount_cents=345_600, turn=quoted_turn + 1)
+    runner._stores.proposals.save(proposal)
+    runner._stores.proposals.confirm(yes, conversation_id)
     runner._states[conversation_id] = state.model_copy(
-        update={
-            "confirmation": Confirmation(
-                proposal_id="P-TEST", amount_cents=345_600, turn=max(state.turn, 1) + 1
-            )
-        }
+        update={"proposal": proposal, "confirmation": yes}
     )

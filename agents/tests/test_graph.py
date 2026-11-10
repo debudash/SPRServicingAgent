@@ -15,6 +15,8 @@ from agents.testing import (
     MemoryCases,
     MemoryIdentity,
     MemoryPasswords,
+    MemoryProposals,
+    MemoryQuotes,
     ScriptedChatModel,
 )
 from contracts.messages import Citation, Intent, IntentKind, KnowledgeAnswer
@@ -85,6 +87,8 @@ def no_accounts() -> Stores:
         identity=MemoryIdentity({}),
         cases=MemoryCases(),
         passwords=MemoryPasswords({}),
+        quotes=MemoryQuotes(),
+        proposals=MemoryProposals(),
     )
 
 
@@ -131,7 +135,7 @@ def test_product_question_is_answered_with_citation() -> None:  # G-B1-01/02/03/
     assert search.queries == [("Is the year 5 charge 4%?", AS_OF)]
     assert [row.event for row in audit.rows] == [AuditEvent.ANSWERED]
     assert audit.rows[0].versions["documents"] == {"fee_schedule": 1}
-    assert audit.rows[0].versions["prompts"] == {"concierge": "2", "knowledge": "1"}
+    assert audit.rows[0].versions["prompts"] == {"concierge": "3", "knowledge": "1"}
 
 
 def test_unsupported_question_is_no_source() -> None:  # G-B1-04
@@ -171,9 +175,10 @@ def test_out_of_scope_skips_knowledge(kind: IntentKind) -> None:  # G-B1-05/06
 
 
 @pytest.mark.parametrize(
-    # account_info left this list in B2 (#59): it is built now, see test_identity_flow.py.
+    # account_info left this list in B2 (#59), withdrawal in B3 (#88): both are built now, see
+    # test_identity_flow.py and test_transaction_flow.py.
     "kind",
-    [IntentKind.WITHDRAWAL, IntentKind.FULL_SURRENDER, IntentKind.HARDSHIP_WAIVER],
+    [IntentKind.FULL_SURRENDER, IntentKind.HARDSHIP_WAIVER],
 )
 def test_other_intents_are_not_permitted_yet(kind: IntentKind) -> None:
     runner, search, audit = make_runner(kind, [], [FEES])
