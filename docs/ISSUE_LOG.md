@@ -43,3 +43,5 @@ Defects found in review are the evidence for workstream F (ADR 0002), so they al
 | #126 | 2026-11-10 | The live desk answered as of today, not the as-of date (D-04) | review on PR #125 (spec) | f55ad32 |
 | #130 | 2026-11-10 | A refused new amount left the old quote live, and a bare yes then confirmed it | review on PR #129 (spec) | ae1e175 |
 | #131 | 2026-11-10 | The step-up could be pending for a voided proposal after a turn failed partway | review on PR #129 (spec) | c1ec70a |
+| #136 | 2026-11-10 | A withdrawal held for a person could be asked for again and executed in the same session | review on PR #135 (spec) | e016db7 |
+| #137 | 2026-11-10 | Flagged proposals skipped the Compliance review (FR-11, BH-B4-01) | review on PR #135 (spec) | 9ccb4a4 |
