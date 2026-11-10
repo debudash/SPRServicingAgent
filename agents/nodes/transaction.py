@@ -10,7 +10,7 @@ explicit yes (confirm) and an approval (#89) take it further.
 import uuid
 from typing import Any
 
-from agents.nodes.common import Deps, NodeFn
+from agents.nodes.common import Deps, NodeFn, is_live
 from contracts.messages import (
     AccountView,
     Proposal,
@@ -23,8 +23,6 @@ from contracts.ports import AuditEvent
 from contracts.state import ConversationState
 from contracts.tools import Node, Role, Step, ToolName
 
-LIVE = frozenset({ProposalStatus.QUOTED, ProposalStatus.CONFIRMED})
-
 
 def make(deps: Deps) -> NodeFn:
     def call(step: Step, tool: ToolName, **kwargs: Any) -> Any:
@@ -35,7 +33,7 @@ def make(deps: Deps) -> NodeFn:
     def void_superseded(state: ConversationState) -> None:
         """GR-18: a new quote replaces the old one; that one can never be confirmed or approved."""
         old = state.proposal
-        if old is not None and deps.proposals.status(old.proposal_id) in LIVE:
+        if old is not None and is_live(deps.proposals, old):
             deps.proposals.move(old.proposal_id, ProposalStatus.VOIDED)
 
     def transaction(state: ConversationState) -> dict[str, Any]:

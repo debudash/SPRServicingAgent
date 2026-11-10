@@ -30,8 +30,14 @@ from agents.nodes import (
     respond,
     transaction,
 )
-from agents.nodes.common import ACCOUNT_INTENTS, MONEY_INTENTS, Deps, NodeFn, TurnContext
-from agents.nodes.transaction import LIVE
+from agents.nodes.common import (
+    ACCOUNT_INTENTS,
+    MONEY_INTENTS,
+    Deps,
+    NodeFn,
+    TurnContext,
+    is_live,
+)
 from contracts.messages import IntentKind
 from contracts.ports import ProposalStore
 from contracts.state import (
@@ -101,9 +107,10 @@ def route_money(state: ConversationState, proposals: ProposalStore) -> str:
     is never a yes). Anything else is an answer to the live quote, which confirm judges."""
     intent, proposal = state.intent, state.proposal
     amount = intent.amount_cents if intent is not None else None
-    live = proposal is not None and proposals.status(proposal.proposal_id) in LIVE
     if amount is not None and (
-        not live or proposal is None or amount != proposal.quote.amount_cents
+        proposal is None
+        or not is_live(proposals, proposal)
+        or amount != proposal.quote.amount_cents
     ):
         return Node.TRANSACTION.value
     return Node.CONFIRM.value

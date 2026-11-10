@@ -11,7 +11,13 @@ from pydantic import BaseModel
 
 from agents.guards.credentials import Credentials
 from agents.tools.registry import ToolRegistry
-from contracts.messages import AccountView, IntentKind, QuoteRefusalReason
+from contracts.messages import (
+    AccountView,
+    IntentKind,
+    Proposal,
+    ProposalStatus,
+    QuoteRefusalReason,
+)
 from contracts.ports import (
     AccountStore,
     AuditLog,
@@ -33,6 +39,13 @@ ACCOUNT_INTENTS = frozenset({IntentKind.ACCOUNT_INFO, IntentKind.VERIFY})
 # Intents that quote or confirm a withdrawal (#88): the same login and Gate A first. A quote
 # needs no step-up; the yes raises it (ADR 0007).
 MONEY_INTENTS = frozenset({IntentKind.WITHDRAWAL, IntentKind.CONFIRM})
+# A proposal still waiting for its yes or its approval (#88). A new quote voids it (GR-18).
+LIVE = frozenset({ProposalStatus.QUOTED, ProposalStatus.CONFIRMED})
+
+
+def is_live(proposals: ProposalStore, proposal: Proposal | None) -> bool:
+    """Whether `proposal` is still live in the store, the one place its status is kept."""
+    return proposal is not None and proposals.status(proposal.proposal_id) in LIVE
 
 
 class BudgetExceeded(Exception):

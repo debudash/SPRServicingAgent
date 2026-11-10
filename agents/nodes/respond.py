@@ -9,8 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from agents.nodes import case
-from agents.nodes.common import ACCOUNT_INTENTS, MONEY_INTENTS, Deps, NodeFn
-from agents.nodes.transaction import LIVE
+from agents.nodes.common import ACCOUNT_INTENTS, MONEY_INTENTS, Deps, NodeFn, is_live
 from contracts.messages import (
     AccountView,
     IntentKind,
@@ -345,7 +344,8 @@ def _after_money(state: ConversationState, money: MoneyFacts) -> tuple[Outcome, 
             if state.session.gate_b_passed:
                 return Outcome.NOT_PERMITTED, _confirmed_text(amount), None
             return Outcome.ANSWERED, STEP_UP_NEEDED_TEXT, None
-        if not (intent.kind is IntentKind.WITHDRAWAL and intent.amount_cents is None):
+        asks_without_amount = intent.kind is IntentKind.WITHDRAWAL and intent.amount_cents is None
+        if not asks_without_amount:  # an answer to the live quote, but not a clear yes
             return Outcome.ANSWERED, _clear_yes_text(amount), None
     if intent.kind is IntentKind.WITHDRAWAL:
         return Outcome.ANSWERED, ASK_AMOUNT_TEXT, None
@@ -364,7 +364,7 @@ def _after_gate(state: ConversationState, gate: GateResult) -> tuple[Outcome, st
 def make(deps: Deps) -> NodeFn:
     def respond(state: ConversationState) -> dict[str, Any]:
         proposal = state.proposal
-        live = proposal is not None and deps.proposals.status(proposal.proposal_id) in LIVE
+        live = is_live(deps.proposals, proposal)
         money = MoneyFacts(deps.turn.quote_refusal, deps.turn.quote_basis, live)
         outcome, text, reference = decide(state, deps.turn.failure, deps.turn.step_up, money)
         reply = Reply(text=text, outcome=outcome, reference=reference)
