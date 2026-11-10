@@ -2,6 +2,7 @@
 
 from collections import deque
 from collections.abc import Sequence
+from datetime import date
 from typing import Any
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
@@ -10,6 +11,8 @@ from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable, RunnableLambda
 from pydantic import PrivateAttr
+
+from contracts.messages import AccountView, CasePacket
 
 
 class ScriptedChatModel(BaseChatModel):
@@ -66,3 +69,44 @@ class ScriptedChatModel(BaseChatModel):
     @staticmethod
     def _to_messages(prompt: Any) -> list[BaseMessage]:
         return prompt if isinstance(prompt, list) else [prompt]
+
+
+# ---------- B2 ports (issue #59): in-memory stand-ins for the data lane's stores ----------
+class MemoryAccounts:
+    """`AccountStore` over fixed views. `trusted` is Gate A; `views` are returned as stored."""
+
+    def __init__(self, views: dict[str, AccountView], trusted: set[str]) -> None:
+        self.views = views
+        self.trusted = trusted
+        self.viewed: list[str] = []
+
+    def gate_a(self, customer_id: str) -> bool:
+        return customer_id in self.trusted
+
+    def view(self, customer_id: str, as_of: date) -> AccountView:
+        self.viewed.append(customer_id)
+        return self.views[customer_id]
+
+
+class MemoryIdentity:
+    """`IdentityCheck` over fixed (dob, last4) pairs. Records only how often it was called."""
+
+    def __init__(self, stored: dict[str, tuple[date, str]]) -> None:
+        self._stored = stored
+        self.checks = 0
+
+    def check_challenge(self, customer_id: str, dob: date, last4: str) -> bool:
+        self.checks += 1
+        return self._stored.get(customer_id) == (dob, last4)
+
+
+class MemoryCases:
+    """`CaseStore` that keeps every packet it was given."""
+
+    def __init__(self) -> None:
+        self.opened: list[CasePacket] = []
+
+    def open(self, packet: CasePacket) -> None:
+        if any(p.case_id == packet.case_id for p in self.opened):
+            raise ValueError(f"duplicate case {packet.case_id}")
+        self.opened.append(packet)

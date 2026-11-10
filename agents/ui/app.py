@@ -1,11 +1,12 @@
 """Chat UI over the desk runner, with a sidebar that shows why the last turn went as it did.
 
-Anonymous conversations only (B1). Tests inject a fake runner via `st.session_state["runner"]`.
+A "signed in as" picker stands in for upstream auth (B2): changing it starts a new conversation
+bound to that customer. Tests inject a fake runner via `st.session_state["runner"]`.
 """
 
 import streamlit as st
 
-from agents.wiring import MissingApiKeyError, build_runner
+from agents.wiring import MissingApiKeyError, build_runner, customer_ids
 from contracts.ports import DeskRunner, TurnResult
 
 
@@ -22,6 +23,15 @@ def _runner() -> DeskRunner | None:
             return None
     runner: DeskRunner = st.session_state["runner"]
     return runner
+
+
+ANONYMOUS = "Not signed in"
+
+
+def _signed_in_as() -> str | None:
+    """The customer the session is bound to. Auth is upstream; this picker stands in for it."""
+    choice = st.sidebar.selectbox("Signed in as", [ANONYMOUS, *customer_ids()], key="signed_in_as")
+    return None if choice == ANONYMOUS else str(choice)
 
 
 def _sidebar(result: TurnResult | None) -> None:
@@ -56,8 +66,10 @@ def main() -> None:
             "(or export it) and restart the desk."
         )
         return
-    if "conversation_id" not in st.session_state:
-        st.session_state["conversation_id"] = runner.start(None)
+    customer = _signed_in_as()
+    if "conversation_id" not in st.session_state or st.session_state.get("customer") != customer:
+        st.session_state["conversation_id"] = runner.start(customer)
+        st.session_state["customer"] = customer
         st.session_state["messages"] = []
         st.session_state["last_result"] = None
 
