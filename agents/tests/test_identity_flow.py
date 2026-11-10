@@ -392,3 +392,36 @@ def test_credentials_are_dropped_on_every_gate_path(session: Session) -> None:
     )
     identity_gate.make(deps)(state)
     assert turn.credentials is None and desk.identity.checks == 0
+
+
+# ---------- #82: FR-03 at the start, and no case without a customer (owner decisions) ----------
+def test_issue_82_untrusted_customer_is_told_on_the_first_turn() -> None:
+    desk = Desk(
+        IntentKind.PRODUCT_QUESTION,
+        IntentKind.PRODUCT_QUESTION,
+        drafts=(cited(FEES, "Year 5 is 3%."), cited(FEES, "Year 5 is 3%.")),
+    )
+    first, second = desk.talk("SPR-1002", "Is year 5 4%?", "And year 6?")
+    assert first.outcome is Outcome.ANSWERED and "3%" in first.reply_text
+    assert CONTACT in first.reply_text and "date of birth" not in first.reply_text.lower()
+    assert CONTACT not in second.reply_text  # told at the start, not on every turn
+
+
+def test_issue_82_g_b2_01_states_the_notice_once() -> None:
+    desk = Desk(IntentKind.ACCOUNT_INFO)
+    [r] = desk.talk("SPR-1002", "What's my current balance?")
+    assert r.outcome is Outcome.NOT_PERMITTED and r.reply_text.count(CONTACT) == 1
+
+
+def test_issue_82_trusted_customer_gets_no_notice() -> None:
+    desk = Desk(IntentKind.PRODUCT_QUESTION, drafts=(cited(FEES, "Year 5 is 3%."),))
+    [r] = desk.talk("SPR-1001", "Is year 5 4%?")
+    assert CONTACT not in r.reply_text
+
+
+def test_issue_82_anonymous_third_party_gets_no_case() -> None:
+    desk = Desk(IntentKind.THIRD_PARTY)
+    [r] = desk.talk(None, "I handle my mum's finances. What's her balance?")
+    assert r.outcome is Outcome.NOT_PERMITTED
+    assert Step.CREATE_CASE not in r.steps and desk.cases.opened == []
+    assert CONTACT in r.reply_text and r.reference is None

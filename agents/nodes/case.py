@@ -49,13 +49,14 @@ def reason_for(state: ConversationState) -> CaseReason | None:
 def make(deps: Deps) -> NodeFn:
     def case(state: ConversationState) -> dict[str, Any]:
         reason = reason_for(state)
-        if reason is None:
+        customer_id = state.session.customer_id
+        if reason is None or customer_id is None:  # routing never sends either here
             return {}
         summary, recommendation = _WHY[reason]
         packet = CasePacket(
             case_id=f"CASE-{uuid.uuid4().hex[:8].upper()}",
             conversation_id=state.conversation_id,
-            customer_id=state.session.customer_id,
+            customer_id=customer_id,
             opened_for=reason,
             request_summary=summary,
             quote=None,

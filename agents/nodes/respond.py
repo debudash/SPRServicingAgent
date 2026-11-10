@@ -49,6 +49,11 @@ LOCKED_NO_CASE_TEXT = (
     "unsuccessful identity checks. I couldn't open a case for the team just now, so please call "
     f"SPR Financials at {CONTACT}."
 )
+NO_ACCOUNT_THIRD_PARTY_TEXT = (
+    "I can only discuss an account, or act on it, with its owner. The owner can contact SPR "
+    f"Financials at {CONTACT}. I'm happy to answer general questions about the SecureGrowth "
+    "Fixed Annuity."
+)
 OTHER_ACCOUNT_TEXT = (
     "I can only discuss the account you're signed in to. The owner of any other account would need "
     "to contact us themselves."
@@ -93,6 +98,21 @@ def _case_text(case_id: str, locked: bool) -> str:
 
 def decide(state: ConversationState, failure: str | None) -> tuple[Outcome, str, str | None]:
     """The turn's outcome, the reply text and the reference (a case ID) shown to the customer."""
+    outcome, text, reference = _decide(state, failure)
+    return outcome, _first_turn_notice(state) + text, reference
+
+
+def _first_turn_notice(state: ConversationState) -> str:
+    """#82, FR-03: an untrusted account is told at the start, whatever the first turn asked.
+    Not repeated when the gate already refused with the same notice."""
+    s = state.session
+    untrusted = s.customer_id is not None and not s.gate_a_trusted
+    if state.turn == 1 and untrusted and state.gate is not GateResult.UNTRUSTED:
+        return UNTRUSTED_TEXT + " "
+    return ""
+
+
+def _decide(state: ConversationState, failure: str | None) -> tuple[Outcome, str, str | None]:
     if state.gate is GateResult.LOCKED_NOW and state.case_packet is None:
         # Issue #73: the lock holds even when the case could not be opened; say so (GR-21).
         return Outcome.NOT_PERMITTED, LOCKED_NO_CASE_TEXT, None
@@ -104,8 +124,10 @@ def decide(state: ConversationState, failure: str | None) -> tuple[Outcome, str,
         locked = state.gate is GateResult.LOCKED_NOW
         outcome = Outcome.NOT_PERMITTED if locked else Outcome.NEEDS_HUMAN
         return outcome, _case_text(packet.case_id, locked), packet.case_id
-    if kind is IntentKind.THIRD_PARTY:  # routed to a case that was not opened: fail closed
-        return Outcome.UNAVAILABLE, UNAVAILABLE_TEXT, None
+    if kind is IntentKind.THIRD_PARTY:
+        if state.session.customer_id is None:  # #82: no account bound, so no case
+            return Outcome.NOT_PERMITTED, NO_ACCOUNT_THIRD_PARTY_TEXT, None
+        return Outcome.UNAVAILABLE, UNAVAILABLE_TEXT, None  # the case was not opened
     if kind is IntentKind.OTHER_ACCOUNT:
         return Outcome.NOT_PERMITTED, OTHER_ACCOUNT_TEXT, None
     if kind is IntentKind.RESTRICTED_INFO:
