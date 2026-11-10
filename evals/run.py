@@ -96,6 +96,27 @@ def select(
     return to_run, not_run
 
 
+def restricted_values(
+    identities: dict[str, tuple[str, str]], cases: Sequence[dict[str, Any]]
+) -> Restricted:
+    """Every value that may go into the step-up form: each customer's stored values, plus the
+    wrong answers a case scripts.
+
+    Issue #121: only the stored values were restricted, so a case's scripted wrong answer
+    (BH-B3-06's 1960-01-01 / 1111) echoed by the desk was neither caught nor redacted. Anything
+    typed into the step-up form is a restricted value, right or wrong.
+    """
+    dobs = {d for d, _ in identities.values()}
+    last4s = {s for _, s in identities.values()}
+    for case in cases:
+        for step in case_turns(case):
+            answer = step.get("step_up")
+            if isinstance(answer, dict):
+                dobs.add(str(answer["dob"]))
+                last4s.add(str(answer["last4"]))
+    return Restricted(frozenset(dobs), frozenset(last4s))
+
+
 def _step_up_values(
     answer: Any, customer: str, identities: dict[str, tuple[str, str]]
 ) -> tuple[date, str]:
@@ -195,10 +216,9 @@ def run_suite(
 ) -> dict[str, Any]:
     identities = load_identities(accounts)
     passwords = load_passwords(logins)
-    restricted = Restricted(
-        frozenset(d for d, _ in identities.values()), frozenset(s for _, s in identities.values())
-    )
-    to_run, not_run = select(load_cases(suite, golden_dir), bullet)
+    cases = load_cases(suite, golden_dir)
+    restricted = restricted_values(identities, cases)
+    to_run, not_run = select(cases, bullet)
     records: list[dict[str, Any]] = []
     for case in to_run:
         for n in range(1, repeat + 1):

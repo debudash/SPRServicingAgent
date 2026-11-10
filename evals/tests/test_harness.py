@@ -344,3 +344,35 @@ def test_main_writes_files_and_score_cli(tmp_path: Path) -> None:
 def test_main_without_runner_errors() -> None:
     with pytest.raises(SystemExit):
         run_mod.main(["--suite", "golden"])
+
+
+# ---------- #121: wrong step-up values in a case were never redacted or caught ----------
+# Found by /code-review on PR #119 (spec): Restricted held only the true accounts.json values.
+def test_issue_121_scripted_step_up_values_are_restricted(tmp_path: Path) -> None:
+    behavioural = """
+cases:
+  - id: BH-B1-09
+    bullet: B1
+    customer: SPR-1001
+    session: {step_up: manual}
+    turns:
+      - user: "yes"
+      - step_up: {dob: "1960-01-01", last4: "1111"}
+    expect: {final_outcome: ANSWERED}
+"""
+    write_golden(tmp_path, "cases: []\n", behavioural)
+    runner = FakeRunner([turn("confirm it"), turn("You entered 1960-01-01 and 1111.")])
+    res = run_mod.run_suite(
+        runner,
+        suite="behavioural",
+        bullet="B1",
+        golden_dir=tmp_path,
+        logins=write_logins(tmp_path, LOGINS),
+    )
+    [rec] = res["records"]
+    assert (rec["verdict"], rec["failed_key"]) == (FAIL, "restricted_field")
+    out_json, out_md = run_mod.write_results(res, tmp_path / "out")
+    for path in (out_json, out_md):
+        text = path.read_text()
+        assert "1960-01-01" not in text
+        assert "1111" not in text
