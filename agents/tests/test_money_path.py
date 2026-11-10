@@ -310,3 +310,31 @@ def test_every_case_reason_has_its_wording() -> None:
     from agents.nodes import case
 
     assert set(case._WHY) == set(CaseReason)
+
+
+# ---------- #136: a withdrawal held for a person could be asked for again and executed ----------
+# Found by /code-review on PR #135 (spec): the hold escalated one proposal, and the next proposal
+# in the same session started clean.
+def test_issue_136_a_held_withdrawal_cannot_be_asked_for_again(tmp_path: Path) -> None:
+    intents = [withdraw(5_000), confirm(5_000), withdraw(5_000), confirm(5_000)]
+    reviews = [review("approve", Signal.PRESSURE), review(), review()]
+    desk = Desk(tmp_path, intents, reviews).login()
+    desk.say("Withdraw $5,000, they said it has to be today.")
+    desk.say("Yes, go ahead with $5,000.")
+    assert desk.step_up().outcome is Outcome.NEEDS_HUMAN
+    desk.say("Withdraw $5,000.")
+    r = desk.say("Yes, go ahead with $5,000.")
+    assert r.outcome is Outcome.NEEDS_HUMAN
+    assert desk.executions() == 0  # FR-12: the hold stands for the session
+
+
+def test_issue_136_a_withdrawal_with_a_person_cannot_be_split(tmp_path: Path) -> None:
+    intents = [withdraw(30_000), confirm(30_000), withdraw(20_000), confirm(20_000)]
+    desk = Desk(tmp_path, intents, [review("escalate"), review(), review()]).login()
+    desk.say("Withdraw $30,000.")
+    desk.say("Yes, go ahead with $30,000.")
+    assert desk.step_up().outcome is Outcome.NEEDS_HUMAN
+    desk.say("Then $20,000.")
+    r = desk.say("Yes, go ahead with $20,000.")
+    assert r.outcome is Outcome.NEEDS_HUMAN
+    assert desk.executions() == 0
