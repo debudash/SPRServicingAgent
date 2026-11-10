@@ -27,7 +27,7 @@ identity store knows which four digits are this customer's.
 - **Pattern capture stays.** It is still the only thing that finds credential candidates for the
   challenge. It also masks other people's values typed into the session, and values typed before a
   customer is bound. `mask_stored` is the backstop for the bound customer's own values.
-- **Contracts 0.5.0.** The port gains the method, with a contract test. `data/identity` implements it, and
+- **The next contracts version** (0.5.0 is B3's ports, #86). The port gains the method, with a contract test. `data/identity` implements it, and
   the restricted-field property suite (#60) gains the "plain digits after verifying" attack.
 
 ## Consequences
