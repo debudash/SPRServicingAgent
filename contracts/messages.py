@@ -179,12 +179,20 @@ class ProposalStatus(StrEnum):
 # The only moves a proposal store may make. The yes comes before any approval (GR-17), approval
 # before execution (FR-08); executed and voided are final. An escalated proposal goes to a human
 # (B4), who approves or voids it.
+# Issue #94 (found by /code-review on PR #92): escalation was allowed only after the yes, so a
+# human-tier quote sent to a case before a valid yes (BH-B3-05) stayed confirmable, and the kill
+# switch turned on after approval (FR-26) left a live token that executed once it was off. Any
+# live proposal can now go to a human.
 PROPOSAL_TRANSITIONS: dict[ProposalStatus, frozenset[ProposalStatus]] = {
-    ProposalStatus.QUOTED: frozenset({ProposalStatus.CONFIRMED, ProposalStatus.VOIDED}),
+    ProposalStatus.QUOTED: frozenset(
+        {ProposalStatus.CONFIRMED, ProposalStatus.ESCALATED, ProposalStatus.VOIDED}
+    ),
     ProposalStatus.CONFIRMED: frozenset(
         {ProposalStatus.APPROVED, ProposalStatus.ESCALATED, ProposalStatus.VOIDED}
     ),
-    ProposalStatus.APPROVED: frozenset({ProposalStatus.EXECUTED, ProposalStatus.VOIDED}),
+    ProposalStatus.APPROVED: frozenset(
+        {ProposalStatus.EXECUTED, ProposalStatus.ESCALATED, ProposalStatus.VOIDED}
+    ),
     ProposalStatus.ESCALATED: frozenset({ProposalStatus.APPROVED, ProposalStatus.VOIDED}),
     ProposalStatus.EXECUTED: frozenset(),
     ProposalStatus.VOIDED: frozenset(),

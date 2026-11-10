@@ -223,3 +223,10 @@ def test_issue_93_identical_proposals_get_different_tokens() -> None:
     h = _proposal().hash  # two proposals with the same figures, customer and as-of date
     assert approval_token("P-1", h, b"s") != approval_token("P-2", h, b"s")
     assert approval_token("P-1", h, b"s") == approval_token("P-1", h, b"s")
+
+
+# ---------- #94: the status machine could not escalate from quoted or approved ----------
+# Found by /code-review on PR #92 (spec): BH-B3-05 and the FR-26 kill switch after approval.
+@pytest.mark.parametrize("before", [ProposalStatus.QUOTED, ProposalStatus.APPROVED])
+def test_issue_94_quoted_and_approved_proposals_can_go_to_a_human(before: ProposalStatus) -> None:
+    assert ProposalStatus.ESCALATED in PROPOSAL_TRANSITIONS[before]
