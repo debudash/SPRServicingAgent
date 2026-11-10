@@ -18,6 +18,9 @@ class Settings:
     # GR-18: the HMAC key for approval tokens. Empty means no token can be issued or checked
     # (contracts.tokens refuses it). Kept out of repr so it never reaches a log.
     approval_secret: bytes = field(default=b"", repr=False)
+    # ADR 0007: seed the demo passwords (data/demo_logins.json). On for the local demo; any
+    # value but "true" turns it off.
+    demo_logins: bool = True
 
     @property
     def desk_db(self) -> Path:
@@ -39,4 +42,5 @@ def load_settings() -> Settings:
         var_dir=Path(os.environ.get("DESK_VAR_DIR") or DEFAULT_VAR_DIR),
         execution_enabled=(os.environ.get("EXECUTION_ENABLED") or "true").strip().lower() == "true",
         approval_secret=(os.environ.get("APPROVAL_SECRET") or "").encode(),
+        demo_logins=(os.environ.get("DESK_DEMO_LOGINS") or "true").strip().lower() == "true",
     )

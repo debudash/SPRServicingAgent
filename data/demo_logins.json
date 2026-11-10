@@ -1,0 +1,10 @@
+{
+  "synthetic": true,
+  "note": "Demo passwords for the simulated upstream login (ADR 0007). Not real credentials; the desk stores only salted scrypt hashes.",
+  "passwords": {
+    "SPR-1001": "margaret-demo",
+    "SPR-1002": "raymond-demo",
+    "SPR-1003": "linda-demo",
+    "SPR-1004": "thomas-demo"
+  }
+}

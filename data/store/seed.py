@@ -20,6 +20,8 @@ STARTER_KIT = (
     / "data"
     / "accounts.json"
 )
+# ADR 0007: the demo passwords for the simulated upstream login (synthetic, labelled).
+DEMO_LOGINS = Path(__file__).resolve().parents[1] / "demo_logins.json"
 
 
 def _cents(value: Any) -> int:
@@ -45,6 +47,23 @@ def seed_starter_kit(conn: sqlite3.Connection, path: Path = STARTER_KIT) -> int:
         conn.execute("COMMIT")
         inserted += 1
     return inserted
+
+
+def seed_demo_logins(conn: sqlite3.Connection, path: Path = DEMO_LOGINS) -> int:
+    """Give every known customer without a login its demo password (hashed by data/identity).
+    Returns how many logins were written. The plain values are never logged.
+
+    Opt-in (review on PR #109): the wiring calls this only when `DESK_DEMO_LOGINS` is on, so a
+    deployment that turns it off never holds the demo passwords."""
+    identity = SqliteIdentityCheck(conn)
+    written = 0
+    for customer_id, password in json.loads(path.read_text(encoding="utf-8"))["passwords"].items():
+        known = conn.execute(
+            "SELECT 1 FROM accounts WHERE customer_id = ?", (customer_id,)
+        ).fetchone()
+        if known and identity.store_password(customer_id, password):
+            written += 1
+    return written
 
 
 def _insert_account(conn: sqlite3.Connection, identity: SqliteIdentityCheck, a: Any) -> None:
