@@ -12,6 +12,7 @@ from pydantic import JsonValue
 
 from contracts.ports import AuditEvent, AuditRecord
 from contracts.tools import Node
+from data.store.db import immediate
 
 GENESIS_HASH = "0" * 64
 
@@ -84,50 +85,70 @@ class SqliteAuditLog:
         versions: dict[str, JsonValue],
         case_id: str | None = None,
     ) -> AuditRecord:
+        # One immediate transaction so the read of the last hash and the insert cannot interleave.
+        with immediate(self._conn):
+            return self.append_in_transaction(
+                conversation_id=conversation_id,
+                turn=turn,
+                node=node,
+                event=event,
+                payload=payload,
+                versions=versions,
+                case_id=case_id,
+            )
+
+    def append_in_transaction(
+        self,
+        *,
+        conversation_id: str,
+        turn: int,
+        node: Node,
+        event: AuditEvent,
+        payload: dict[str, JsonValue],
+        versions: dict[str, JsonValue],
+        case_id: str | None = None,
+    ) -> AuditRecord:
+        """`append` for a caller that already holds a `BEGIN IMMEDIATE` on this connection, so the
+        audit row commits or rolls back with the caller's own writes (the ledger, FR-10)."""
+        if not self._conn.in_transaction:
+            raise RuntimeError("append_in_transaction needs an open transaction")
         at = datetime.now(UTC).isoformat()
         payload_json = json.dumps(payload, sort_keys=True)
         versions_json = json.dumps(versions, sort_keys=True)
-        # One immediate transaction so the read of the last hash and the insert cannot interleave.
-        self._conn.execute("BEGIN IMMEDIATE")
-        try:
-            last = self._conn.execute(
-                "SELECT audit_id, row_hash FROM audit ORDER BY audit_id DESC LIMIT 1"
-            ).fetchone()
-            audit_id, prev_hash = (last[0] + 1, last[1]) if last else (1, GENESIS_HASH)
-            row_hash = _row_hash(
+        last = self._conn.execute(
+            "SELECT audit_id, row_hash FROM audit ORDER BY audit_id DESC LIMIT 1"
+        ).fetchone()
+        audit_id, prev_hash = (last[0] + 1, last[1]) if last else (1, GENESIS_HASH)
+        row_hash = _row_hash(
+            prev_hash,
+            _hashed_fields(
+                audit_id,
+                conversation_id,
+                case_id,
+                turn,
+                at,
+                str(node),
+                str(event),
+                payload_json,
+                versions_json,
+            ),
+        )
+        self._conn.execute(
+            f"INSERT INTO audit ({_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                audit_id,
+                conversation_id,
+                case_id,
+                turn,
+                at,
+                str(node),
+                str(event),
+                payload_json,
+                versions_json,
                 prev_hash,
-                _hashed_fields(
-                    audit_id,
-                    conversation_id,
-                    case_id,
-                    turn,
-                    at,
-                    str(node),
-                    str(event),
-                    payload_json,
-                    versions_json,
-                ),
-            )
-            self._conn.execute(
-                f"INSERT INTO audit ({_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    audit_id,
-                    conversation_id,
-                    case_id,
-                    turn,
-                    at,
-                    str(node),
-                    str(event),
-                    payload_json,
-                    versions_json,
-                    prev_hash,
-                    row_hash,
-                ),
-            )
-            self._conn.execute("COMMIT")
-        except BaseException:
-            self._conn.execute("ROLLBACK")
-            raise
+                row_hash,
+            ),
+        )
         return AuditRecord(
             audit_id=audit_id,
             conversation_id=conversation_id,

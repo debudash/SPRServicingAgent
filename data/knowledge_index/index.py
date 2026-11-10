@@ -56,18 +56,28 @@ class ChromaKnowledgeSearch:
         )
         return len(chunks)
 
-    def _in_force(self, as_of: date) -> list[str]:
-        """`doc_id@version` keys: per doc_id the highest version effective on or before as_of."""
+    def _in_force(self, as_of: date, doc_ids: frozenset[str] | None) -> list[str]:
+        """`doc_id@version` keys: per doc_id the highest version effective on or before as_of,
+        limited to `doc_ids` when given."""
         metas = self._collection.get(include=["metadatas"])["metadatas"] or []
         best: dict[str, int] = {}
         for m in metas:
+            if doc_ids is not None and str(m["doc_id"]) not in doc_ids:
+                continue
             if date.fromisoformat(str(m["effective_date"])) <= as_of:
                 doc_id, version = str(m["doc_id"]), int(cast(int, m["version"]))
                 best[doc_id] = max(best.get(doc_id, 0), version)
         return [_key(d, v) for d, v in best.items()]
 
     def search(self, query: str, as_of: date, k: int = 4) -> list[KnowledgeChunk]:
-        keys = self._in_force(as_of)
+        return self.search_documents(query, as_of, k, doc_ids=None)
+
+    def search_documents(
+        self, query: str, as_of: date, k: int, doc_ids: frozenset[str] | None
+    ) -> list[KnowledgeChunk]:
+        """`search`, restricted to `doc_ids` (None: every document). The restriction is in the
+        query's filter, so a document outside it can never be returned (FR-22)."""
+        keys = self._in_force(as_of, doc_ids)
         if not keys or k < 1:
             return []
         res = self._collection.query(
