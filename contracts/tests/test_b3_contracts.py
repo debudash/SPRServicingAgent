@@ -113,18 +113,20 @@ def test_terminal_statuses_go_nowhere() -> None:
 # ---------- approval tokens (GR-18): bound to the proposal hash ----------
 def test_token_is_bound_to_hash_and_secret() -> None:
     h = _proposal().hash
-    token = approval_token(h, b"secret-a")
-    assert token == approval_token(h, b"secret-a")
-    assert token != approval_token(h, b"secret-b")
+    token = approval_token("P-1", h, b"secret-a")
+    assert token == approval_token("P-1", h, b"secret-a")
+    assert token != approval_token("P-1", h, b"secret-b")
     other = proposal_hash("SPR-1001", QUOTE.model_copy(update={"irs_notice": True}), AS_OF)
-    assert token != approval_token(other, b"secret-a")
-    assert tokens_match(token, approval_token(h, b"secret-a"))
-    assert not tokens_match(token, approval_token(other, b"secret-a"))
+    assert token != approval_token("P-1", other, b"secret-a")
+    assert tokens_match(token, approval_token("P-1", h, b"secret-a"))
+    assert not tokens_match(token, approval_token("P-1", other, b"secret-a"))
 
 
 def test_an_empty_secret_is_refused() -> None:
     with pytest.raises(ValueError):
-        approval_token(_proposal().hash, b"")
+        approval_token("P-1", _proposal().hash, b"")
+    with pytest.raises(ValueError):
+        approval_token("", _proposal().hash, b"secret")
 
 
 # ---------- ports ----------
@@ -213,3 +215,11 @@ def test_fakes_conform_to_the_b3_ports() -> None:
             approval_id="A-1", proposal_id="P-1", approver="compliance", decision=Decision.HOLD
         )
     )
+
+
+# ---------- #93: the token was bound to the proposal hash only ----------
+# Found by /code-review on PR #92 (spec). GR-18: an approval is bound to that exact proposal.
+def test_issue_93_identical_proposals_get_different_tokens() -> None:
+    h = _proposal().hash  # two proposals with the same figures, customer and as-of date
+    assert approval_token("P-1", h, b"s") != approval_token("P-2", h, b"s")
+    assert approval_token("P-1", h, b"s") == approval_token("P-1", h, b"s")
