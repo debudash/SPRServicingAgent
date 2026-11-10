@@ -179,30 +179,36 @@ class ProposalStore(Protocol):
         """Store a new proposal with status `quoted`. A duplicate ID raises."""
         ...
 
-    def get(self, proposal_id: str) -> Proposal | None: ...
+    def get(self, proposal_id: str) -> Proposal | None:
+        """The stored proposal (FR-08 checks it), or None."""
+        ...
 
     def status(self, proposal_id: str) -> ProposalStatus:
         """Raises KeyError for an unknown proposal."""
         ...
 
-    def confirm(self, confirmation: Confirmation) -> None:
-        """Move `quoted` to `confirmed` (GR-17). Raises ValueError unless the amount is the quoted
-        amount and the yes came on a later turn than the quote."""
+    def confirm(self, confirmation: Confirmation, conversation_id: str) -> None:
+        """Move `quoted` to `confirmed` (GR-17, FR-08). Raises ValueError when
+        `check_confirmation` refuses the yes (another proposal, another conversation, another
+        amount, or not a later turn)."""
         ...
 
     def move(self, proposal_id: str, status: ProposalStatus) -> None:
-        """Change status. Raises ValueError for a move PROPOSAL_TRANSITIONS does not allow."""
+        """Change status. Raises ValueError when `check_transition` refuses the move."""
         ...
 
 
 class ApprovalStore(Protocol):
     def record(self, approval: Approval) -> None:
-        """Store a Compliance or human decision. An approve moves the proposal to `approved`;
-        an escalate moves it to `escalated`."""
+        """Store a Compliance or human decision and move the proposal as `DECISION_MOVES` says
+        (approve -> approved, hold or escalate -> escalated, reject -> voided, request_info ->
+        unchanged), through `check_transition`, in one transaction."""
         ...
 
 
 class ExecutionRefusedReason(StrEnum):
+    """Why the ledger refused (FR-08 to FR-10, FR-26)."""
+
     UNKNOWN_PROPOSAL = "unknown_proposal"
     NOT_APPROVED = "not_approved"
     TOKEN_INVALID = "token_invalid"
@@ -222,13 +228,21 @@ class Ledger(Protocol):
     def execute(
         self, proposal_id: str, token: str, turn: int, versions: dict[str, JsonValue]
     ) -> Execution:
-        """Execute an approved proposal (FR-08 to FR-10), in one database transaction: check the
-        token against `approval_token(stored hash, APPROVAL_SECRET)` and unused, re-check the hash
-        against the stored figures, insert the transaction (proposal_id UNIQUE), mark the
-        proposal executed and write the `executed` audit row. All of it or none of it.
+        """Execute an approved proposal (FR-08 to FR-10) in one database transaction, all of it or
+        none of it. The checks run in this order (review on PR #92), each raising ExecutionRefused:
 
-        Idempotent (FR-09): replaying an executed proposal returns its first Execution and writes
-        nothing. Any failed check raises ExecutionRefused.
+        1. Unknown proposal: UNKNOWN_PROPOSAL.
+        2. Already executed: if `token` matches the one that executed it, return that first
+           Execution and write nothing (FR-09 replay); otherwise TOKEN_INVALID.
+        3. The deployment's execution switch is off: EXECUTION_DISABLED, whoever approved (FR-26).
+        4. Status is not `approved`: NOT_APPROVED.
+        5. `token` does not match `approval_token(proposal_id, stored hash, APPROVAL_SECRET)` on
+           the approving row, or that row's token was already used: TOKEN_INVALID.
+        6. The stored figures no longer hash to the stored hash: HASH_CHANGED.
+
+        Then: mark the token used at `turn`, insert the transaction (proposal_id UNIQUE), move the
+        proposal to `executed`, and write the `executed` audit row with the proposal's
+        conversation_id and `versions`. `approved_by` comes from the approving row.
         """
         ...
 

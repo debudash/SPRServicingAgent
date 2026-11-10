@@ -2,12 +2,14 @@
 
 import inspect
 from datetime import date
+from itertools import pairwise
 
 import pytest
 from pydantic import JsonValue, ValidationError
 
 from contracts import CONTRACTS_VERSION
 from contracts.messages import (
+    DECISION_MOVES,
     PROPOSAL_TRANSITIONS,
     Approval,
     Confirmation,
@@ -19,6 +21,8 @@ from contracts.messages import (
     QuoteRefusal,
     QuoteRefusalReason,
     ThresholdTier,
+    check_confirmation,
+    check_transition,
     proposal_hash,
 )
 from contracts.ports import (
@@ -87,7 +91,7 @@ def test_the_happy_path_is_quoted_confirmed_approved_executed() -> None:
         ProposalStatus.APPROVED,
         ProposalStatus.EXECUTED,
     ]
-    for before, after in zip(path, path[1:], strict=False):
+    for before, after in pairwise(path):
         assert after in PROPOSAL_TRANSITIONS[before]
 
 
@@ -134,12 +138,6 @@ def test_ledger_execute_takes_a_token_and_returns_an_execution() -> None:
     sig = inspect.signature(Ledger.execute)
     assert list(sig.parameters) == ["self", "proposal_id", "token", "turn", "versions"]
     assert sig.return_annotation is Execution
-    assert {r.value for r in ExecutionRefusedReason} >= {
-        "unknown_proposal",
-        "not_approved",
-        "token_invalid",
-        "hash_changed",
-    }
     err = ExecutionRefused(ExecutionRefusedReason.TOKEN_INVALID)
     assert err.reason is ExecutionRefusedReason.TOKEN_INVALID
 
@@ -165,13 +163,13 @@ class _FakeProposals:
     def status(self, proposal_id: str) -> ProposalStatus:
         return self.rows[proposal_id][1]
 
-    def confirm(self, confirmation: Confirmation) -> None:
+    def confirm(self, confirmation: Confirmation, conversation_id: str) -> None:
+        check_confirmation(self.rows[confirmation.proposal_id][0], confirmation, conversation_id)
         self.move(confirmation.proposal_id, ProposalStatus.CONFIRMED)
 
     def move(self, proposal_id: str, status: ProposalStatus) -> None:
         proposal, before = self.rows[proposal_id]
-        if status not in PROPOSAL_TRANSITIONS[before]:
-            raise ValueError(f"{before} -> {status}")
+        check_transition(before, status)
         self.rows[proposal_id] = (proposal, status)
 
 
@@ -204,7 +202,9 @@ def test_fakes_conform_to_the_b3_ports() -> None:
     policy: PolicySource = _FakePolicy()
     assert isinstance(quotes.quote("SPR-1001", 0, AS_OF), QuoteRefusal)
     proposals.save(_proposal())
-    proposals.confirm(Confirmation(proposal_id="P-1", amount_cents=2_000_000, turn=2))
+    with pytest.raises(ValueError):  # the yes on the quote's own turn (GR-17)
+        proposals.confirm(Confirmation(proposal_id="P-1", amount_cents=2_000_000, turn=1), "CV1")
+    proposals.confirm(Confirmation(proposal_id="P-1", amount_cents=2_000_000, turn=2), "CV1")
     assert proposals.status("P-1") is ProposalStatus.CONFIRMED
     with pytest.raises(ValueError):
         proposals.move("P-1", ProposalStatus.EXECUTED)  # skipping approval
@@ -230,3 +230,53 @@ def test_issue_93_identical_proposals_get_different_tokens() -> None:
 @pytest.mark.parametrize("before", [ProposalStatus.QUOTED, ProposalStatus.APPROVED])
 def test_issue_94_quoted_and_approved_proposals_can_go_to_a_human(before: ProposalStatus) -> None:
     assert ProposalStatus.ESCALATED in PROPOSAL_TRANSITIONS[before]
+
+
+# ---------- review follow-ups on PR #92: the rules as code, not docstrings ----------
+def test_check_transition_allows_only_the_table() -> None:
+    check_transition(ProposalStatus.QUOTED, ProposalStatus.CONFIRMED)
+    with pytest.raises(ValueError):
+        check_transition(ProposalStatus.QUOTED, ProposalStatus.EXECUTED)
+    with pytest.raises(ValueError):
+        check_transition(ProposalStatus.EXECUTED, ProposalStatus.EXECUTED)
+
+
+def test_check_confirmation_accepts_a_later_yes_for_the_quoted_amount() -> None:
+    check_confirmation(
+        _proposal(), Confirmation(proposal_id="P-1", amount_cents=2_000_000, turn=2), "CV1"
+    )
+
+
+@pytest.mark.parametrize(
+    ("confirmation", "conversation_id"),
+    [
+        (Confirmation(proposal_id="P-1", amount_cents=2_200_000, turn=2), "CV1"),  # BH-B3-02
+        (Confirmation(proposal_id="P-1", amount_cents=2_000_000, turn=1), "CV1"),  # same turn
+        (Confirmation(proposal_id="P-2", amount_cents=2_000_000, turn=2), "CV1"),  # other proposal
+        (Confirmation(proposal_id="P-1", amount_cents=2_000_000, turn=2), "CV2"),  # other session
+    ],
+)
+def test_check_confirmation_refuses_anything_else(
+    confirmation: Confirmation, conversation_id: str
+) -> None:
+    with pytest.raises(ValueError):
+        check_confirmation(_proposal(), confirmation, conversation_id)
+
+
+def test_every_decision_has_its_effect_on_the_proposal() -> None:
+    assert set(DECISION_MOVES) == set(Decision)
+    assert DECISION_MOVES[Decision.APPROVE] is ProposalStatus.APPROVED
+    assert DECISION_MOVES[Decision.HOLD] is ProposalStatus.ESCALATED  # FR-12: a human case
+    assert DECISION_MOVES[Decision.ESCALATE] is ProposalStatus.ESCALATED
+    assert DECISION_MOVES[Decision.REJECT] is ProposalStatus.VOIDED
+    assert DECISION_MOVES[Decision.REQUEST_INFO] is None  # stays with the human
+
+
+def test_execution_refusal_reasons_are_exactly_these() -> None:
+    assert {r.value for r in ExecutionRefusedReason} == {
+        "unknown_proposal",
+        "not_approved",
+        "token_invalid",
+        "hash_changed",
+        "execution_disabled",
+    }

@@ -162,6 +162,8 @@ class QuoteRefusalReason(StrEnum):
 
 
 class QuoteRefusal(Message):
+    """FR-07: the quote was refused; the customer is told why (NOT_PERMITTED)."""
+
     reason: QuoteRefusalReason
 
 
@@ -205,12 +207,34 @@ class Confirmation(Message):
     turn: int = Field(ge=1)
 
 
+def check_transition(before: ProposalStatus, after: ProposalStatus) -> None:
+    """Raise ValueError unless PROPOSAL_TRANSITIONS allows the move. Every ProposalStore calls this
+    (review on PR #92: the rule must be code, not a docstring)."""
+    if after not in PROPOSAL_TRANSITIONS[before]:
+        raise ValueError(f"a proposal cannot move from {before} to {after}")
+
+
+def check_confirmation(
+    proposal: Proposal, confirmation: Confirmation, conversation_id: str
+) -> None:
+    """GR-17 and FR-08: a yes counts only for that proposal, in the conversation that saw the quote,
+    for the quoted amount, on a later turn than the quote. Raise ValueError otherwise."""
+    if confirmation.proposal_id != proposal.proposal_id:
+        raise ValueError("the yes is for a different proposal")
+    if conversation_id != proposal.conversation_id:
+        raise ValueError("the yes came from a different conversation than the quote")
+    if confirmation.amount_cents != proposal.quote.amount_cents:
+        raise ValueError("the yes is for a different amount than the quote (GR-17)")
+    if confirmation.turn <= proposal.quoted_turn:
+        raise ValueError("the yes must come on a later turn than the quote (GR-17)")
+
+
 # ---------- Rules and Compliance ----------
 class RuleFlag(StrEnum):
     OVER_AMOUNT = "over_amount"  # gross over $25,000 (D-02)
     OVER_SHARE = "over_share"  # gross over 50% of balance (D-02)
-    # A non-active account is refused at quote time (FR-07, NOT_PERMITTED); this flag only
-    # catches a status change between the quote and execution (issue #24).
+    # A non-active account is refused at quote time (FR-07, QuoteRefusalReason.NOT_ACTIVE); this
+    # flag only catches a status change between the quote and execution (issue #24).
     NOT_ACTIVE = "not_active"
     WAIVER_REQUEST = "waiver_request"
     FULL_SURRENDER = "full_surrender"
@@ -258,6 +282,16 @@ class ComplianceDecision(Message):
             raise ValueError("a vulnerable-customer signal cannot be approved (FR-12)")
         return self
 
+
+# What each decision does to the proposal (review on PR #92). A hold is a human case (FR-12), so
+# it escalates like an escalate; a human reject voids; request_info leaves it with the human.
+DECISION_MOVES: dict[Decision, ProposalStatus | None] = {
+    Decision.APPROVE: ProposalStatus.APPROVED,
+    Decision.HOLD: ProposalStatus.ESCALATED,
+    Decision.ESCALATE: ProposalStatus.ESCALATED,
+    Decision.REJECT: ProposalStatus.VOIDED,
+    Decision.REQUEST_INFO: None,
+}
 
 COMPLIANCE_DECISIONS = frozenset({Decision.APPROVE, Decision.HOLD, Decision.ESCALATE})
 REVIEWER_DECISIONS = frozenset({Decision.APPROVE, Decision.REJECT, Decision.REQUEST_INFO})
