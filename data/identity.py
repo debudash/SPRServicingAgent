@@ -1,16 +1,32 @@
-"""The identity table's only door (PG-04, ADR 0005).
+"""The identity and logins tables' only door (PG-04, ADR 0005, ADR 0007).
 
 Restricted values (date of birth, SSN digits) are compared and banded here and never returned:
-`check_challenge` gives a boolean and `age_band` gives a band. No other module may name the
-`identity` table or its columns (tested in data/tests/test_b2_store.py).
+`check_challenge` gives a boolean and `age_band` gives a band. The login's password hashes are
+the same kind of value: `check_password` gives a boolean. No other module may name the `identity`
+or `logins` tables or their restricted columns (data/tests/test_b2_store.py, test_logins.py).
 """
 
+import hashlib
 import hmac
+import secrets
 import sqlite3
 from datetime import date
 
 from contracts.messages import AgeBand
 from data.clock import add_months
+
+# scrypt cost (RFC 7914): about 16 MiB and tens of milliseconds per check, enough for a simulated
+# login; stored per row, so a later raise does not invalidate existing hashes.
+SCRYPT_N, SCRYPT_R, SCRYPT_P = 2**14, 8, 1
+# An unknown customer is checked against this, so the time taken does not say whether the
+# customer exists (as check_challenge does).
+_NO_SALT = "00" * 16
+
+
+def _scrypt(password: str, salt_hex: str, n: int, r: int, p: int) -> str:
+    return hashlib.scrypt(
+        password.encode(), salt=bytes.fromhex(salt_hex), n=n, r=r, p=p, dklen=32
+    ).hex()
 
 
 def parse_dob(customer_id: str, raw: str) -> date:
@@ -64,5 +80,34 @@ class SqliteIdentityCheck:
         cur = self._conn.execute(
             "INSERT OR IGNORE INTO identity (customer_id, dob, ssn_last4) VALUES (?, ?, ?)",
             (customer_id, parsed.isoformat(), last4),
+        )
+        return cur.rowcount == 1
+
+    def check_password(self, customer_id: str, password: str) -> bool:
+        """The simulated upstream login (ADR 0007). The stored hash never leaves this call."""
+        row = self._conn.execute(
+            "SELECT salt, password_hash, scrypt_n, scrypt_r, scrypt_p FROM logins "
+            "WHERE customer_id = ?",
+            (customer_id,),
+        ).fetchone()
+        salt, stored, n, r, p = row or (_NO_SALT, "", SCRYPT_N, SCRYPT_R, SCRYPT_P)
+        computed = _scrypt(password, str(salt), int(n), int(r), int(p))
+        return row is not None and bool(password) and hmac.compare_digest(computed, str(stored))
+
+    def store_password(self, customer_id: str, password: str) -> bool:
+        """Insert a salted hash if the customer has no login yet (used by the demo seed). True if
+        a row was written."""
+        salt = secrets.token_hex(16)
+        cur = self._conn.execute(
+            "INSERT OR IGNORE INTO logins (customer_id, salt, password_hash, scrypt_n, scrypt_r, "
+            "scrypt_p) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                customer_id,
+                salt,
+                _scrypt(password, salt, SCRYPT_N, SCRYPT_R, SCRYPT_P),
+                SCRYPT_N,
+                SCRYPT_R,
+                SCRYPT_P,
+            ),
         )
         return cur.rowcount == 1
