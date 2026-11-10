@@ -244,7 +244,7 @@ hold for the bound customer (contracts 0.3.0).
 sequenceDiagram
     actor C as Customer
     participant CON as Concierge
-    participant TX as Transaction (Sonnet)
+    participant TX as Transaction (code, ADR 0008)
     participant Q as data/quote (code)
     participant CF as confirm (code)
     participant RU as rules (code)

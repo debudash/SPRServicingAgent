@@ -41,3 +41,5 @@ Defects found in review are the evidence for workstream F (ADR 0002), so they al
 | #120 | 2026-11-10 | The eval harness crashed the whole run when the desk asked a guest for a step-up | review on PR #119 (spec) | 4969e59 |
 | #121 | 2026-11-10 | Wrong step-up values scripted by an eval case were neither caught nor redacted | review on PR #119 (spec) | 0a3cf00 |
 | #126 | 2026-11-10 | The live desk answered as of today, not the as-of date (D-04) | review on PR #125 (spec) | f55ad32 |
+| #130 | 2026-11-10 | A refused new amount left the old quote live, and a bare yes then confirmed it | review on PR #129 (spec) | ae1e175 |
+| #131 | 2026-11-10 | The step-up could be pending for a voided proposal after a turn failed partway | review on PR #129 (spec) | c1ec70a |
