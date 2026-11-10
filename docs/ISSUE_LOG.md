@@ -45,3 +45,4 @@ Defects found in review are the evidence for workstream F (ADR 0002), so they al
 | #131 | 2026-11-10 | The step-up could be pending for a voided proposal after a turn failed partway | review on PR #129 (spec) | c1ec70a |
 | #136 | 2026-11-10 | A withdrawal held for a person could be asked for again and executed in the same session | review on PR #135 (spec) | e016db7 |
 | #137 | 2026-11-10 | Flagged proposals skipped the Compliance review (FR-11, BH-B4-01) | review on PR #135 (spec) | 9ccb4a4 |
+| #140 | 2026-11-10 | A repeated yes after an execution re-quoted, and a bare yes then executed a second withdrawal | money-path red team (#90) | eb384ed |
