@@ -8,6 +8,7 @@ from datetime import date
 
 import pytest
 
+from agents.nodes.knowledge import KnowledgeDraft
 from agents.runner import GraphDeskRunner
 from agents.testing import MemoryAccounts, MemoryCases, MemoryIdentity, ScriptedChatModel
 from contracts.messages import (
@@ -24,7 +25,7 @@ from contracts.ports import AuditEvent, TurnResult
 from contracts.state import GateResult, TraceEvent
 from contracts.tools import Node, Role, Step
 
-from .test_graph import FakeSearch, MemoryAudit
+from .test_graph import FEES, FakeSearch, MemoryAudit, cited
 
 AS_OF = date(2024, 12, 1)
 CONTACT = "1-800-555-0192"
@@ -57,16 +58,22 @@ STORED = {
 
 
 class Desk:
-    def __init__(self, *kinds: IntentKind, views: dict[str, AccountView] | None = None) -> None:
+    def __init__(
+        self,
+        *kinds: IntentKind,
+        views: dict[str, AccountView] | None = None,
+        drafts: tuple[KnowledgeDraft, ...] = (),
+    ) -> None:
+        self.search = FakeSearch([FEES])
         self.concierge = ScriptedChatModel([Intent(kind=k) for k in kinds])
         self.audit = MemoryAudit()
         self.accounts = MemoryAccounts(views or VIEWS, trusted={"SPR-1001", "SPR-1003", "SPR-1004"})
         self.identity = MemoryIdentity(STORED)
         self.cases = MemoryCases()
         self.runner = GraphDeskRunner(
-            search=FakeSearch([]),
+            search=self.search,
             audit=self.audit,
-            models={Role.CONCIERGE: self.concierge, Role.KNOWLEDGE: ScriptedChatModel()},
+            models={Role.CONCIERGE: self.concierge, Role.KNOWLEDGE: ScriptedChatModel(drafts)},
             clock=lambda: AS_OF,
             accounts=self.accounts,
             identity=self.identity,
@@ -303,3 +310,44 @@ def test_issue_73_lock_holds_when_the_case_store_fails() -> None:
     assert locking.outcome is Outcome.NOT_PERMITTED
     assert CONTACT in locking.reply_text and "case" in locking.reply_text.lower()
     assert turns[3].outcome is Outcome.NOT_PERMITTED and "87,450.62" not in turns[3].reply_text
+
+
+# ---------- #74: credentials in a turn swallowed the customer's actual request ----------
+# Found by /code-review on PR #72 (spec). GR-20: the outcome is about what the customer asked.
+MIXED = "DOB 1958-03-14, last four of SSN 7823. Is the year 5 surrender charge 4%?"
+
+
+def test_issue_74_credentials_with_a_product_question_get_the_answer() -> None:
+    desk = Desk(IntentKind.PRODUCT_QUESTION, drafts=(cited(FEES, "Year 5 is 3%."),))
+    [r] = desk.talk("SPR-1001", MIXED)
+    assert desk.identity.checks == 1  # the credentials were still checked
+    assert r.steps == (Step.VERIFY_IDENTITY, Step.SEARCH_KB)
+    assert r.outcome is Outcome.ANSWERED and "3%" in r.reply_text
+    assert desk.runner._states[desk.conv].session.gate_b_passed
+
+
+def test_issue_74_anonymous_credentials_with_a_product_question_get_the_answer() -> None:
+    desk = Desk(IntentKind.PRODUCT_QUESTION, drafts=(cited(FEES, "Year 5 is 3%."),))
+    [r] = desk.talk(None, MIXED)
+    assert r.outcome is Outcome.ANSWERED and "3%" in r.reply_text
+    assert "sign in" not in r.reply_text.lower()
+    assert desk.identity.checks == 0
+
+
+@pytest.mark.parametrize("verified_first", [False, True])
+def test_issue_74_credentials_with_an_unbuilt_request_are_never_answered(
+    verified_first: bool,
+) -> None:
+    kinds = [IntentKind.VERIFY] * verified_first + [IntentKind.WITHDRAWAL]
+    desk = Desk(*kinds)
+    texts = [VERIFY_TEXT] * verified_first + ["1958-03-14 and 7823, withdraw $2,000 please"]
+    r = desk.talk("SPR-1001", *texts)[-1]
+    assert r.outcome is Outcome.NOT_PERMITTED
+    assert "yet" in r.reply_text
+
+
+def test_issue_74_a_failed_challenge_is_still_reported_on_a_product_turn() -> None:
+    desk = Desk(IntentKind.PRODUCT_QUESTION, drafts=(cited(FEES, "Year 5 is 3%."),))
+    [r] = desk.talk("SPR-1001", "DOB 1958-03-15, SSN last four 7832. Is year 5 4%?")
+    assert desk.runner._states[desk.conv].session.failed_attempts == 1
+    assert "don't match" in r.reply_text and "3%" in r.reply_text

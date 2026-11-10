@@ -11,11 +11,16 @@ from pydantic import BaseModel
 
 from agents.guards.credentials import Credentials
 from agents.tools.registry import ToolRegistry
+from contracts.messages import IntentKind
 from contracts.ports import AccountStore, AuditLog, CaseStore, IdentityCheck, Usage
 from contracts.state import MAX_TOOL_CALLS_PER_TURN, ConversationState
 from contracts.tools import Node, Role, Step
 
 NodeFn = Callable[[ConversationState], dict[str, Any]]
+
+# Intents answered from the account, so both gates must hold first (FR-02). Routing and respond
+# share this one set.
+ACCOUNT_INTENTS = frozenset({IntentKind.ACCOUNT_INFO, IntentKind.VERIFY})
 
 
 class BudgetExceeded(Exception):

@@ -6,7 +6,7 @@ figures straight from the record, formatted by `contracts.money`) or the case. N
 
 from typing import Any
 
-from agents.nodes.common import Deps, NodeFn
+from agents.nodes.common import ACCOUNT_INTENTS, Deps, NodeFn
 from contracts.messages import AccountView, IntentKind, Reply
 from contracts.money import format_dollars
 from contracts.outcomes import Outcome
@@ -111,18 +111,38 @@ def decide(state: ConversationState, failure: str | None) -> tuple[Outcome, str,
     if kind is IntentKind.RESTRICTED_INFO:
         return Outcome.NOT_PERMITTED, RESTRICTED_TEXT, None
     gate = state.gate
-    if gate is not None:
+    if kind in ACCOUNT_INTENTS and gate is not None:
         return _after_gate(state, gate)
+    # Issue #74 (found by /code-review on PR #72): any gate result used to decide the reply, so
+    # credentials sent with another request swallowed it, and "not available yet" came back as
+    # ANSWERED. The outcome now follows what was asked; the gate result is only a lead-in.
+    lead = _gate_lead_in(state)
     if kind is IntentKind.PRODUCT_QUESTION:
         answer = state.knowledge_answer
         if answer is None:
             return Outcome.UNAVAILABLE, UNAVAILABLE_TEXT, None
         if answer.found:
-            return Outcome.ANSWERED, answer.text, None
-        return Outcome.NO_SOURCE, answer.text, None
+            return Outcome.ANSWERED, lead + answer.text, None
+        return Outcome.NO_SOURCE, lead + answer.text, None
     if kind is IntentKind.OUT_OF_SCOPE:
-        return Outcome.OUT_OF_SCOPE, OUT_OF_SCOPE_TEXT, None
-    return Outcome.NOT_PERMITTED, NOT_YET_TEXT, None
+        return Outcome.OUT_OF_SCOPE, lead + OUT_OF_SCOPE_TEXT, None
+    return Outcome.NOT_PERMITTED, lead + NOT_YET_TEXT, None
+
+
+def _gate_lead_in(state: ConversationState) -> str:
+    """What a non-account turn says about the identity check its credentials triggered."""
+    gate = state.gate
+    if gate is GateResult.PASSED:
+        return "Thank you, you're verified. "
+    if gate is GateResult.FAILED:
+        left = MAX_FAILED_CHALLENGES - state.session.failed_attempts
+        tries = "try" if left == 1 else "tries"
+        return f"Those identity details don't match our records ({left} more {tries}). "
+    if gate is GateResult.UNTRUSTED:
+        return UNTRUSTED_TEXT + " "
+    if gate is GateResult.LOCKED:
+        return LOCKED_TEXT + " "
+    return ""
 
 
 def _after_gate(state: ConversationState, gate: GateResult) -> tuple[Outcome, str, str | None]:
@@ -138,9 +158,7 @@ def _after_gate(state: ConversationState, gate: GateResult) -> tuple[Outcome, st
         return Outcome.NOT_PERMITTED, _failed_text(state.session.failed_attempts), None
     if state.account_view is not None:  # PASSED or VERIFIED, and the account was read
         return Outcome.ANSWERED, _account_text(state.account_view), None
-    if gate is GateResult.PASSED:
-        return Outcome.ANSWERED, "Thank you, you're verified. " + NOT_YET_TEXT, None
-    return Outcome.NOT_PERMITTED, NOT_YET_TEXT, None
+    return Outcome.UNAVAILABLE, UNAVAILABLE_TEXT, None  # passed, but the account was not read
 
 
 def make(deps: Deps) -> NodeFn:
