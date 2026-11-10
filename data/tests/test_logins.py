@@ -17,6 +17,7 @@ from data.tests.isolation import RESTRICTED, SCANNED_LANES, forbidden_sql, viola
 def conn(tmp_path: Path) -> sqlite3.Connection:
     c = open_db(tmp_path / "desk.db")
     seed_starter_kit(c)
+    seed_demo_logins(c)  # opt-in: wiring calls it when DESK_DEMO_LOGINS is on (review on #109)
     return c
 
 
@@ -75,7 +76,8 @@ def test_equal_passwords_get_different_hashes(conn: sqlite3.Connection) -> None:
     identity.store_password("SPR-1001", "same-password")
     identity.store_password("SPR-1003", "same-password")
     hashes = conn.execute(
-        "SELECT password_hash FROM logins WHERE customer_id IN ('SPR-1001', 'SPR-1003')"
+        "SELECT password_hash FROM logins WHERE customer_id IN ('SPR-1001', 'SPR-1003') "
+        "ORDER BY customer_id"
     ).fetchall()
     assert hashes[0] != hashes[1]  # a per-customer salt
     assert identity.check_password("SPR-1001", "same-password")
@@ -179,3 +181,33 @@ def test_issue_112_a_corrupt_login_row_refuses_instead_of_raising(
 ) -> None:
     conn.execute(corrupt)
     assert SqliteIdentityCheck(conn).check_password("SPR-1001", _demo()["SPR-1001"]) is False
+
+
+# ---------- review follow-ups on PR #109 ----------
+def test_an_empty_password_is_never_stored(conn: sqlite3.Connection) -> None:
+    conn.execute("DELETE FROM logins WHERE customer_id = 'SPR-1001'")
+    with pytest.raises(ValueError):
+        SqliteIdentityCheck(conn).store_password("SPR-1001", "")
+    assert (
+        conn.execute("SELECT COUNT(*) FROM logins WHERE customer_id = 'SPR-1001'").fetchone()[0]
+        == 0
+    )
+
+
+def test_the_starter_seed_does_not_create_logins(tmp_path: Path) -> None:
+    c = open_db(tmp_path / "plain.db")
+    seed_starter_kit(c)
+    assert c.execute("SELECT COUNT(*) FROM logins").fetchone()[0] == 0  # demo logins are opt-in
+
+
+@pytest.mark.parametrize(("raw", "on"), [(None, True), ("true", True), ("false", False)])
+def test_demo_logins_follow_the_setting(
+    monkeypatch: pytest.MonkeyPatch, raw: str | None, on: bool
+) -> None:
+    from data.settings import load_settings
+
+    if raw is None:
+        monkeypatch.delenv("DESK_DEMO_LOGINS", raising=False)
+    else:
+        monkeypatch.setenv("DESK_DEMO_LOGINS", raw)
+    assert load_settings().demo_logins is on

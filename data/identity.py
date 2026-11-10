@@ -103,7 +103,9 @@ class SqliteIdentityCheck:
 
     def store_password(self, customer_id: str, password: str) -> bool:
         """Insert a salted hash if the customer has no login yet (used by the demo seed). True if
-        a row was written."""
+        a row was written. An empty password is refused: it could never log in."""
+        if not password:
+            raise ValueError("a login needs a password")
         salt = secrets.token_hex(16)
         cur = self._conn.execute(
             "INSERT OR IGNORE INTO logins (customer_id, salt, password_hash, scrypt_n, scrypt_r, "

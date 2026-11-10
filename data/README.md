@@ -20,7 +20,8 @@ See `AGENT_RULES.md` and `CLAUDE.md` for the full ownership table.
 
 The login page stands in for upstream authentication. The starter customers' demo passwords are in
 `data/demo_logins.json` (synthetic, labelled), and the seed stores only salted scrypt hashes in the
-`logins` table, which only `data/identity.py` may read.
+`logins` table, which only `data/identity.py` may read. Seeding is opt-in: the wiring calls
+`seed_demo_logins` only when `DESK_DEMO_LOGINS` is on (the default for the local demo).
 
 | Customer | Password | What the demo shows |
 |---|---|---|

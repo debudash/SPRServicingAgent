@@ -46,13 +46,15 @@ def seed_starter_kit(conn: sqlite3.Connection, path: Path = STARTER_KIT) -> int:
             raise
         conn.execute("COMMIT")
         inserted += 1
-    seed_demo_logins(conn)
     return inserted
 
 
 def seed_demo_logins(conn: sqlite3.Connection, path: Path = DEMO_LOGINS) -> int:
     """Give every known customer without a login its demo password (hashed by data/identity).
-    Returns how many logins were written. The plain values are never logged."""
+    Returns how many logins were written. The plain values are never logged.
+
+    Opt-in (review on PR #109): the wiring calls this only when `DESK_DEMO_LOGINS` is on, so a
+    deployment that turns it off never holds the demo passwords."""
     identity = SqliteIdentityCheck(conn)
     written = 0
     for customer_id, password in json.loads(path.read_text(encoding="utf-8"))["passwords"].items():
