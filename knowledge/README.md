@@ -16,6 +16,10 @@ source: ...                   # where it came from
 ---
 ```
 
+The current version of a document is `<doc_id>.md`. A superseded version stays beside it as
+`<doc_id>_v<version>.md`, with `superseded_by` naming the version that replaced it
+(`contracts/tests/test_knowledge_docs.py` checks both).
+
 Chunks are split by `###` section, and the heading text is the citation's section. The FAQ has no
 `###` sections: it is split by question, one chunk per `**Q: ...**` block, and the question text is the
 section.
@@ -23,11 +27,17 @@ section.
 | doc_id | Version | Synthetic | What it is |
 |---|---|---|---|
 | `product_summary` | 1 | no | Starter kit, unchanged below the front matter |
-| `fee_schedule` | 1 | no | Starter kit, unchanged below the front matter |
+| `fee_schedule` | 2 | no | Starter kit, unchanged below the front matter. In force from 2020-01-01 |
+| `fee_schedule` | 1 | yes | `fee_schedule_v1.md`: the superseded schedule (Year 5 at 4%), in force 2016-01-01 to 2019-12-31, kept to test GR-04 (BH-B4-02) |
 | `faq` | 1 | no | Starter kit, unchanged below the front matter |
 | `large_withdrawal_policy` | 1 | yes | Which withdrawals a person reviews (D-01, D-02) |
 | `vulnerable_customer_policy` | 1 | yes | Hold signals and third-party contact (D-07, D-09) |
 | `waiver_review_procedure` | 1 | yes | How waiver requests are reviewed; documents for the terminal illness waiver (D-03, FR-13) |
 
-The superseded fee-schedule version used by the versioning case (BH-B4-02) is added in B4.
-The synthetic documents add process rules only; none contradicts a starter-kit product fact.
+The synthetic documents add process rules only; none contradicts a starter-kit product fact in force at
+the as-of date. The one exception is by design: `fee_schedule` v1 is an older schedule that v2 (the starter
+kit) superseded on 2020-01-01. It exists so the versioning case (BH-B4-02) can check that the version in
+force wins (GR-04).
+
+The starter-kit schedule became version 2 when v1 was added (#123): versions start at 1, and the older
+document takes the lower number. Its text did not change.

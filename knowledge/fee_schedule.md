@@ -1,6 +1,6 @@
 ---
 doc_id: fee_schedule
-version: 1
+version: 2  # v1 is the superseded synthetic schedule, fee_schedule_v1.md (#123)
 effective_date: 2020-01-01
 synthetic: false
 source: problemstmt/spr_starter_kit/knowledge_base/fee_schedule.md

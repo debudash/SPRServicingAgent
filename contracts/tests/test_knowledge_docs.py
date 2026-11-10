@@ -26,11 +26,28 @@ def _split(path: Path) -> tuple[dict[str, Any], str]:
 def test_front_matter(path: Path) -> None:
     meta, body = _split(path)
     assert REQUIRED <= set(meta), f"missing: {REQUIRED - set(meta)}"
-    assert meta["doc_id"] == path.stem
     assert isinstance(meta["version"], int) and meta["version"] >= 1
+    # The current version is `<doc_id>.md`; a superseded one is `<doc_id>_v<version>.md` (#123).
+    if "superseded_by" in meta:
+        assert path.stem == f"{meta['doc_id']}_v{meta['version']}"
+    else:
+        assert meta["doc_id"] == path.stem
     assert isinstance(meta["effective_date"], date)
     assert isinstance(meta["synthetic"], bool)
     assert body.strip()
+
+
+def test_a_superseded_version_is_replaced_by_a_later_one() -> None:
+    """Each `superseded_by` names a higher version of the same document that took effect later,
+    so the version in force at any date is unambiguous (GR-04, #123)."""
+    metas = [_split(p)[0] for p in DOCS]
+    versions = {(m["doc_id"], m["version"]): m for m in metas}
+    assert len(versions) == len(metas), "one file per document version"
+    for m in metas:
+        if "superseded_by" in m:
+            successor = versions[(m["doc_id"], m["superseded_by"])]
+            assert m["superseded_by"] > m["version"]
+            assert successor["effective_date"] > m["effective_date"]
 
 
 def test_starter_documents_are_unchanged_below_the_front_matter() -> None:
