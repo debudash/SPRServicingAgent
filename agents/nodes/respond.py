@@ -107,7 +107,12 @@ def _first_turn_notice(state: ConversationState) -> str:
     Not repeated when the gate already refused with the same notice."""
     s = state.session
     untrusted = s.customer_id is not None and not s.gate_a_trusted
-    if state.turn == 1 and untrusted and state.gate is not GateResult.UNTRUSTED:
+    # Issue #84 (found by /code-review on PR #83): keyed on `turn == 1`, the notice was lost for
+    # good when turn 1 failed before respond ran (e.g. the account store was down). "At the
+    # start" is the desk's first reply built here, which the trace records: earlier turns' trace
+    # holds a respond event only if respond ran in them.
+    replied_before = any(e.node is Node.RESPOND for e in state.trace)
+    if untrusted and not replied_before and state.gate is not GateResult.UNTRUSTED:
         return UNTRUSTED_TEXT + " "
     return ""
 

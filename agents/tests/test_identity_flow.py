@@ -69,11 +69,14 @@ class Desk:
         views: dict[str, AccountView] | None = None,
         drafts: tuple[KnowledgeDraft, ...] = (),
         cases: MemoryCases | None = None,
+        accounts: MemoryAccounts | None = None,
     ) -> None:
         self.search = FakeSearch([FEES])
         self.concierge = ScriptedChatModel([Intent(kind=k) for k in kinds])
         self.audit = MemoryAudit()
-        self.accounts = MemoryAccounts(views or VIEWS, trusted={"SPR-1001", "SPR-1003", "SPR-1004"})
+        self.accounts = accounts or MemoryAccounts(
+            views or VIEWS, trusted={"SPR-1001", "SPR-1003", "SPR-1004"}
+        )
         self.identity = MemoryIdentity(STORED)
         self.cases = cases or MemoryCases()
         self.runner = GraphDeskRunner(
@@ -425,3 +428,26 @@ def test_issue_82_anonymous_third_party_gets_no_case() -> None:
     assert r.outcome is Outcome.NOT_PERMITTED
     assert Step.CREATE_CASE not in r.steps and desk.cases.opened == []
     assert CONTACT in r.reply_text and r.reference is None
+
+
+# ---------- #84: the first-turn notice was lost when turn 1 failed ----------
+# Found by /code-review on PR #83 (spec). FR-03: told in the desk's first real reply.
+class FlakyAccounts(MemoryAccounts):
+    def __init__(self) -> None:
+        super().__init__(VIEWS, trusted={"SPR-1001"})
+        self.calls = 0
+
+    def gate_a(self, customer_id: str) -> bool:
+        self.calls += 1
+        if self.calls == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return super().gate_a(customer_id)
+
+
+def test_issue_84_notice_comes_on_the_first_real_reply_after_a_failed_turn() -> None:
+    drafts = (cited(FEES, "Year 5 is 3%."), cited(FEES, "Year 5 is 3%."))
+    desk = Desk(*[IntentKind.PRODUCT_QUESTION] * 3, drafts=drafts, accounts=FlakyAccounts())
+    failed, first_real, later = desk.talk("SPR-1002", "Is year 5 4%?", "Is year 5 4%?", "Year 6?")
+    assert failed.outcome is Outcome.UNAVAILABLE
+    assert first_real.outcome is Outcome.ANSWERED and CONTACT in first_real.reply_text
+    assert CONTACT not in later.reply_text
