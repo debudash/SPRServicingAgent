@@ -27,3 +27,8 @@ Defects found in review are the evidence for workstream F (ADR 0002), so they al
 | #84 | 2026-11-09 | The first-turn notice for an untrusted account was lost if turn 1 failed | review on PR #83 (spec) | 7582091 |
 | #93 | 2026-11-09 | Approval token was bound to the proposal hash only, so identical proposals shared a token | review on PR #92 (spec) | 5bd6dc5 |
 | #94 | 2026-11-09 | Proposal status machine could not escalate from quoted or approved | review on PR #92 (spec) | ec7186d |
+| #97 | 2026-11-09 | Executed withdrawals never lowered the balance, so money could move past it | review on PR #96 (spec) | 33836e9 |
+| #98 | 2026-11-09 | A human approval executed a proposal the customer never confirmed | review on PR #96 (spec) | 186971f |
+| #99 | 2026-11-09 | ProposalStore.move could set confirmed, approved or executed around their real paths | review on PR #96 (spec) | 99dad4b |
+| #107 | 2026-11-10 | A logged-in but locked session could hold an account view | review on PR #106 (spec) | 7da37b5 |
+| #108 | 2026-11-10 | The contract allowed a passed step-up on a locked session | review on PR #106 (spec) | bd585d8 |
