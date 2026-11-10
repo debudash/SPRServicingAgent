@@ -445,7 +445,8 @@ def test_only_the_used_part_of_the_allowance_is_recorded_as_free(conn: sqlite3.C
     _ledger(conn).execute("P-1", _approve(conn), 3, VERSIONS)
     row = conn.execute("SELECT free_cents, excess_cents FROM transactions WHERE proposal_id='P-1'")
     assert row.fetchone() == (500_000, 0)
-    assert _quote(conn, "SPR-1001", 100_000).free_cents == 874_506 - 500_000  # D-05 counts it
+    # D-05: 10% of the current balance ($82,450.62 after #97), less this year's $5,000.
+    assert _quote(conn, "SPR-1001", 100_000).free_cents == 824_506 - 500_000
 
 
 def test_a_replay_returns_the_first_execution_and_writes_nothing(conn: sqlite3.Connection) -> None:
@@ -699,3 +700,45 @@ def test_issue_98_a_reviewer_may_still_reject_an_unconfirmed_proposal(
     store.move("P-1", ProposalStatus.ESCALATED)
     _decide(conn, "human:r1", Decision.REJECT, "A-1")
     assert store.status("P-1") is ProposalStatus.VOIDED
+
+
+# ---------- #97: executed withdrawals never lowered the balance ----------
+# Found by /code-review on PR #96 (spec): five $25,000 withdrawals executed on $87,450.62 (FR-07).
+def _balance(conn: sqlite3.Connection, customer_id: str = "SPR-1001") -> int:
+    return _count(conn, f"SELECT balance_cents FROM accounts WHERE customer_id = '{customer_id}'")
+
+
+def test_issue_97_an_execution_lowers_the_balance_by_the_gross(conn: sqlite3.Connection) -> None:
+    _confirmed(conn)
+    _ledger(conn).execute("P-1", _approve(conn), 3, VERSIONS)
+    assert _balance(conn) == 8_745_062 - 2_000_000
+    # FR-07 now sees the current balance: the old balance is over it.
+    refusal = _quotes(conn).quote("SPR-1001", 8_745_062, AS_OF)
+    assert refusal == QuoteRefusal(reason=QuoteRefusalReason.OVER_BALANCE)
+
+
+def test_issue_97_a_replay_does_not_lower_the_balance_twice(conn: sqlite3.Connection) -> None:
+    _confirmed(conn)
+    token = _approve(conn)
+    _ledger(conn).execute("P-1", token, 3, VERSIONS)
+    _ledger(conn).execute("P-1", token, 4, VERSIONS)
+    assert _balance(conn) == 8_745_062 - 2_000_000
+
+
+def test_issue_97_a_proposal_the_balance_no_longer_covers_writes_nothing(
+    conn: sqlite3.Connection,
+) -> None:
+    # Two proposals quoted on the same balance; after the first, the second no longer fits.
+    conn.execute("UPDATE accounts SET balance_cents = 4000000 WHERE customer_id = 'SPR-1001'")
+    _confirmed(conn, "P-1", 1_900_000)
+    _confirmed(conn, "P-2", 1_900_000)
+    _ledger(conn).execute("P-1", _approve(conn, "P-1"), 3, VERSIONS)
+    conn.execute("UPDATE accounts SET balance_cents = 1000000 WHERE customer_id = 'SPR-1001'")
+    token = _approve(conn, "P-2")
+    with pytest.raises(ValueError):
+        _ledger(conn).execute("P-2", token, 3, VERSIONS)
+    assert _balance(conn) == 1_000_000
+    assert _transactions(conn) == 1
+    assert SqliteProposalStore(conn).status("P-2") is ProposalStatus.APPROVED
+    assert _count(conn, "SELECT COUNT(*) FROM approvals WHERE used_at_turn IS NOT NULL") == 1
+    assert not conn.in_transaction

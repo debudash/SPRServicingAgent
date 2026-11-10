@@ -93,6 +93,18 @@ class SqliteLedger:
             raise ExecutionRefused(ExecutionRefusedReason.HASH_CHANGED)
 
         q = proposal.quote
+        # Issue #97 (found by /code-review on PR #96): the ledger never lowered the balance, so
+        # FR-07's over-balance refusal and D-02's 50% line kept reading the old balance and money
+        # could move past it. The balance drops by the gross here, in the same transaction, and
+        # only if it still covers it (two proposals quoted on one balance): otherwise nothing is
+        # written. D-05 reads the current balance, as the owner decided.
+        lowered = c.execute(
+            "UPDATE accounts SET balance_cents = balance_cents - ? "
+            "WHERE customer_id = ? AND balance_cents >= ?",
+            (q.amount_cents, proposal.customer_id, q.amount_cents),
+        )
+        if lowered.rowcount != 1:
+            raise ValueError("the balance no longer covers this withdrawal; nothing was executed")
         transaction_id = f"TX-{uuid4().hex[:12].upper()}"
         c.execute(
             "UPDATE approvals SET used_at_turn = ? WHERE approval_id = ?", (turn, approval_id)
