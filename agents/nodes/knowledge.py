@@ -23,7 +23,7 @@ from agents.prompts import load
 from contracts.messages import Citation, KnowledgeAnswer
 from contracts.ports import KnowledgeChunk
 from contracts.state import ConversationState
-from contracts.tools import Role, Step, ToolName
+from contracts.tools import Node, Role, Step, ToolName
 
 NO_SOURCE_TEXT = "The documentation I have does not cover that."
 
@@ -51,7 +51,7 @@ def make(deps: Deps) -> NodeFn:
 
     def search(query: str, state: ConversationState) -> list[KnowledgeChunk]:
         deps.turn.spend_tool_call()
-        deps.turn.steps.append(Step.SEARCH_KB)
+        deps.turn.record(Node.KNOWLEDGE, Step.SEARCH_KB)
         found = deps.registry.call(
             Role.KNOWLEDGE, ToolName.SEARCH_KB, query=query, as_of=state.as_of
         )

@@ -1,4 +1,9 @@
-"""The B1 graph: intake -> concierge -> (knowledge | respond) -> respond.
+"""The B2 graph (ARCHITECTURE 3.1, 3.2):
+
+    intake -> concierge -> knowledge                                   -> respond
+                        -> identity_gate -> (account | case | respond)  -> respond
+                        -> case                                        -> respond
+                        -> respond
 
 Routing is code (ADR 0003): the model classifies, it never picks the next node. Every node's
 writes pass through `contracts.state.check_write`; a node writing a field it does not own raises
@@ -11,13 +16,14 @@ from typing import Any, cast
 
 from langgraph.graph import END, START, StateGraph
 
-from agents.nodes import concierge, intake, knowledge, respond
+from agents.nodes import account, case, concierge, identity_gate, intake, knowledge, respond
 from agents.nodes.common import Deps, NodeFn, TurnContext
 from contracts.messages import IntentKind
 from contracts.state import (
     MAX_HOPS_PER_TURN,
     MAX_SECONDS_PER_TURN,
     ConversationState,
+    GateResult,
     Session,
     check_write,
 )
@@ -57,10 +63,36 @@ def _guarded(node: Node, fn: NodeFn, turn: TurnContext) -> NodeFn:
     return run
 
 
+# Intents that need both gates before anything about the account is said (FR-02).
+ACCOUNT_INTENTS = frozenset({IntentKind.ACCOUNT_INFO, IntentKind.VERIFY})
+
+
 def route_after_concierge(state: ConversationState, turn: TurnContext) -> str:
-    if turn.failure is None and state.intent is not None:
-        if state.intent.kind is IntentKind.PRODUCT_QUESTION:
-            return Node.KNOWLEDGE.value
+    if turn.failure is not None or state.intent is None:
+        return Node.RESPOND.value
+    kind = state.intent.kind
+    if kind is IntentKind.THIRD_PARTY:  # D-09: a case, before any identity question
+        return Node.CASE.value
+    if kind in (IntentKind.OTHER_ACCOUNT, IntentKind.RESTRICTED_INFO):  # NG-05, NG-08
+        return Node.RESPOND.value
+    # A complete set of credentials is a challenge attempt whatever the model called the turn:
+    # routing is code (ADR 0003), so a mislabel cannot make the customer repeat them.
+    creds = turn.credentials
+    if kind in ACCOUNT_INTENTS or (creds is not None and creds.complete):
+        return Node.IDENTITY_GATE.value
+    if kind is IntentKind.PRODUCT_QUESTION:
+        return Node.KNOWLEDGE.value
+    return Node.RESPOND.value
+
+
+def route_after_gate(state: ConversationState, turn: TurnContext) -> str:
+    if turn.failure is not None:
+        return Node.RESPOND.value
+    if state.gate is GateResult.LOCKED_NOW:  # D-08: the third failure opens a case
+        return Node.CASE.value
+    passed = state.gate in (GateResult.PASSED, GateResult.VERIFIED)
+    if passed and state.intent is not None and state.intent.kind in ACCOUNT_INTENTS:
+        return Node.ACCOUNT.value
     return Node.RESPOND.value
 
 
@@ -71,6 +103,9 @@ def build_graph(deps: Deps) -> Any:
         (Node.INTAKE, intake),
         (Node.CONCIERGE, concierge),
         (Node.KNOWLEDGE, knowledge),
+        (Node.IDENTITY_GATE, identity_gate),
+        (Node.ACCOUNT, account),
+        (Node.CASE, case),
         (Node.RESPOND, respond),
     ):
         g.add_node(node.value, cast(Any, _guarded(node, module.make(deps), turn)))
@@ -79,8 +114,14 @@ def build_graph(deps: Deps) -> Any:
     g.add_conditional_edges(
         Node.CONCIERGE.value,
         lambda s: route_after_concierge(s, turn),
-        [Node.KNOWLEDGE.value, Node.RESPOND.value],
+        [Node.KNOWLEDGE.value, Node.IDENTITY_GATE.value, Node.CASE.value, Node.RESPOND.value],
     )
-    g.add_edge(Node.KNOWLEDGE.value, Node.RESPOND.value)
+    g.add_conditional_edges(
+        Node.IDENTITY_GATE.value,
+        lambda s: route_after_gate(s, turn),
+        [Node.ACCOUNT.value, Node.CASE.value, Node.RESPOND.value],
+    )
+    for node in (Node.KNOWLEDGE, Node.ACCOUNT, Node.CASE):
+        g.add_edge(node.value, Node.RESPOND.value)
     g.add_edge(Node.RESPOND.value, END)
     return g.compile()

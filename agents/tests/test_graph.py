@@ -10,7 +10,7 @@ from agents.nodes import concierge as concierge_node
 from agents.nodes.common import TurnContext
 from agents.nodes.knowledge import KnowledgeDraft
 from agents.runner import GraphDeskRunner
-from agents.testing import ScriptedChatModel
+from agents.testing import MemoryAccounts, MemoryCases, MemoryIdentity, ScriptedChatModel
 from contracts.messages import Citation, Intent, IntentKind, KnowledgeAnswer
 from contracts.outcomes import Outcome
 from contracts.ports import AuditEvent, AuditRecord, KnowledgeChunk
@@ -72,6 +72,15 @@ class MemoryAudit:
         return True
 
 
+def no_accounts() -> dict[str, Any]:
+    """B2 stores with no accounts in them, for runs that never reach an account."""
+    return {
+        "accounts": MemoryAccounts({}, trusted=set()),
+        "identity": MemoryIdentity({}),
+        "cases": MemoryCases(),
+    }
+
+
 def make_runner(
     intent: IntentKind | None,
     drafts: list[Any],
@@ -85,6 +94,7 @@ def make_runner(
         audit,
         models={Role.CONCIERGE: concierge, Role.KNOWLEDGE: knowledge},
         clock=lambda: AS_OF,
+        **no_accounts(),
     )
     return runner, search, audit
 
@@ -114,7 +124,7 @@ def test_product_question_is_answered_with_citation() -> None:  # G-B1-01/02/03/
     assert search.queries == [("Is the year 5 charge 4%?", AS_OF)]
     assert [row.event for row in audit.rows] == [AuditEvent.ANSWERED]
     assert audit.rows[0].versions["documents"] == {"fee_schedule": 1}
-    assert audit.rows[0].versions["prompts"] == {"concierge": "1", "knowledge": "1"}
+    assert audit.rows[0].versions["prompts"] == {"concierge": "2", "knowledge": "1"}
 
 
 def test_unsupported_question_is_no_source() -> None:  # G-B1-04
@@ -154,7 +164,9 @@ def test_out_of_scope_skips_knowledge(kind: IntentKind) -> None:  # G-B1-05/06
 
 
 @pytest.mark.parametrize(
-    "kind", [IntentKind.WITHDRAWAL, IntentKind.ACCOUNT_INFO, IntentKind.HARDSHIP_WAIVER]
+    # account_info left this list in B2 (#59): it is built now, see test_identity_flow.py.
+    "kind",
+    [IntentKind.WITHDRAWAL, IntentKind.FULL_SURRENDER, IntentKind.HARDSHIP_WAIVER],
 )
 def test_other_intents_are_not_permitted_yet(kind: IntentKind) -> None:
     runner, search, audit = make_runner(kind, [], [FEES])

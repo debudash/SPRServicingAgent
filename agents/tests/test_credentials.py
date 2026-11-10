@@ -10,7 +10,7 @@ from agents.testing import ScriptedChatModel
 from contracts.messages import Intent, IntentKind
 from contracts.tools import Role
 
-from .test_graph import FakeSearch, MemoryAudit
+from .test_graph import FakeSearch, MemoryAudit, no_accounts
 
 DOB = date(1958, 3, 14)
 AS_OF = date(2024, 12, 1)
@@ -96,6 +96,7 @@ def test_runner_masks_the_turn_before_anything_sees_it() -> None:
         audit=audit,
         models={Role.CONCIERGE: concierge, Role.KNOWLEDGE: ScriptedChatModel()},
         clock=lambda: date(2024, 12, 1),
+        **no_accounts(),
     )
     conv = runner.start("SPR-1001")
     result = runner.send(conv, "My date of birth is 1958-03-14 and the last four are 7823.")
@@ -194,6 +195,7 @@ def test_issue_67_runner_masks_credentials_split_across_turns() -> None:
         audit=MemoryAudit(),
         models={Role.CONCIERGE: concierge, Role.KNOWLEDGE: ScriptedChatModel()},
         clock=lambda: AS_OF,
+        **no_accounts(),
     )
     conv = runner.start("SPR-1001")
     runner.send(conv, "My date of birth is 1958-03-14.")

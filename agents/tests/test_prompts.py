@@ -9,13 +9,15 @@ RULES = {
     "knowledge": ["GR-01", "GR-05", "GR-08", "GR-11", "GR-15"],
     "respond": ["GR-10", "GR-20"],
 }
+# Each prompt's version, pinned: a prompt edit must bump its version (it is in every audit row).
+VERSIONS = {"concierge": 2, "knowledge": 1, "respond": 1}
 DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/\d{2,4}\b")
 
 
 @pytest.mark.parametrize("prompt_id", RULES)
 def test_prompt_loads_with_version_and_rules(prompt_id: str) -> None:
     text, version = load(prompt_id)
-    assert version == 1
+    assert version == VERSIONS[prompt_id]
     assert not text.startswith("---")
     for rule in RULES[prompt_id]:
         assert rule in text

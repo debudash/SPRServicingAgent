@@ -1,4 +1,4 @@
-"""GraphDeskRunner: implements `contracts.ports.DeskRunner` over the B1 graph.
+"""GraphDeskRunner: implements `contracts.ports.DeskRunner` over the desk graph.
 
 Conversation state lives in memory for now (a persisted store arrives with later bullets). The
 runner owns the turn counter, budgets, transcript and trace (FIELD_WRITERS).
@@ -11,6 +11,7 @@ from collections.abc import Callable, Mapping
 from datetime import date
 
 from langchain_core.language_models.chat_models import BaseChatModel
+from pydantic import ValidationError
 
 from agents.graph import build_graph
 from agents.guards.credentials import capture
@@ -20,7 +21,15 @@ from agents.nodes.respond import UNAVAILABLE_TEXT
 from agents.tools.registry import ToolRegistry
 from contracts import CONTRACTS_VERSION
 from contracts.outcomes import Outcome
-from contracts.ports import AuditEvent, AuditLog, KnowledgeSearch, TurnResult
+from contracts.ports import (
+    AccountStore,
+    AuditEvent,
+    AuditLog,
+    CaseStore,
+    IdentityCheck,
+    KnowledgeSearch,
+    TurnResult,
+)
 from contracts.state import (
     Budgets,
     ContractViolation,
@@ -44,8 +53,15 @@ class GraphDeskRunner:
         audit: AuditLog,
         models: Mapping[Role, BaseChatModel] | None = None,
         clock: Callable[[], date] = date.today,
+        *,
+        accounts: AccountStore,
+        identity: IdentityCheck,
+        cases: CaseStore,
     ) -> None:
         self._audit = audit
+        self._accounts = accounts
+        self._identity = identity
+        self._cases = cases
         self._clock = clock
         spec = load_model_map()
         self._model_names = {role: spec[role].model for role in spec}
@@ -89,6 +105,9 @@ class GraphDeskRunner:
             model_names=self._model_names,
             clock=self._clock,
             turn=ctx,
+            accounts=self._accounts,
+            identity=self._identity,
+            cases=self._cases,
         )
         # A fresh turn: per-turn results cleared, the runner's own fields advanced.
         state = prior.model_copy(
@@ -97,7 +116,12 @@ class GraphDeskRunner:
                 "budgets": Budgets(
                     turn_started_monotonic=started, cost_micros=prior.budgets.cost_micros
                 ),
+                # Review of PR #61: the gate decision, the account view and the case are this
+                # turn's, so one turn's decision never stands in for the next turn's check.
                 "intent": None,
+                "gate": None,
+                "account_view": None,
+                "case_packet": None,
                 "knowledge_answer": None,
                 "reply": None,
                 "transcript": [
@@ -115,7 +139,9 @@ class GraphDeskRunner:
             if reply is None:
                 raise ContractViolation("the turn ended without a reply")
             outcome, reply_text, reference = reply.outcome, reply.text, reply.reference
-        except ContractViolation:
+        except (ContractViolation, ValidationError):
+            # Review of PR #61: a state the contracts refuse (say, an account view without both
+            # gates) is a contract violation, not a provider error, so the eval does not mark it na.
             logger.exception("turn failed closed on a contract violation")
             outcome, reply_text, reference = Outcome.UNAVAILABLE, UNAVAILABLE_TEXT, None
             self._audit_fallback(state, ctx)
@@ -134,8 +160,8 @@ class GraphDeskRunner:
         trace = list(final.trace)
         for node in ctx.nodes:
             trace.append(TraceEvent(turn=turn_no, node=node))
-        for step in ctx.steps:
-            trace.append(TraceEvent(turn=turn_no, node=Node.KNOWLEDGE, step=step))
+        for node, step in zip(ctx.step_nodes, ctx.steps, strict=True):
+            trace.append(TraceEvent(turn=turn_no, node=node, step=step))
         self._states[conversation_id] = final.model_copy(
             update={
                 "turn": turn_no,
