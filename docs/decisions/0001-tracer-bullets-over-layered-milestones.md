@@ -36,6 +36,12 @@ labels follow the bullets (B1 = `wave:1`, and so on).
   messages only, never changed or removed ones.
 - The brief's milestone table is replaced by the bullet table, so the brief and the repo tell one story.
 
+## Amendment (2026-11-09, issue #80)
+One exception to "additive only", decided by the owner: contracts 0.4.0 makes `CasePacket.customer_id`
+required, because every case must name its customer. It is a tightening of an existing field, made before
+any case had been stored, so no stored data or caller depended on the old shape. Any further non-additive
+change needs the same: an owner decision, recorded here.
+
 ## Alternatives rejected
 - **Keep layered milestones.** Simpler to plan, but integration risk lands at the end and there is
   nothing to show until M4.

@@ -44,7 +44,7 @@ date of birth or SSN digits leaking.
 | D-06 | Time-saving baselines are stated assumptions (section 1), labelled as such. | Owner decision |
 | D-07 | Vulnerable-customer signals that force a human hold, at any amount: a third party directing the customer; pressure or urgency; age 80+ with a withdrawal above the free allowance; confusion or repeated changes of amount. | Owner decision |
 | D-08 | 3 failed identity challenges lock account actions for the session and open a case. | Owner decision |
-| D-09 | A third party (spouse, child, beneficiary, claimed attorney) gets public product information only and a case so SPR can verify their authority offline. Nothing about the account is shared. | Owner decision |
+| D-09 | A third party (spouse, child, beneficiary, claimed attorney) gets public product information only and, for an account bound to the session, a case so SPR can verify their authority offline. With no account bound (anonymous session) there is no case: the owner is pointed to SPR (2026-11-09, #80). Nothing about the account is shared. | Owner decision |
 | D-10 | Budgets: per customer turn 8 agent hops, 12 tool calls, 30 seconds; per conversation $0.10 model cost. These are hard stops; the cost target (M-14) is the expected average. | Owner decision |
 
 ## 3. Guarantees the platform will not provide
@@ -75,7 +75,8 @@ Each item can be turned into an eval case or unit test that passes or fails with
   (account trusted) and Gate B (challenge passed this session) both hold. Correct credentials on an untrusted
   account grant nothing.
 - **FR-03** On an untrusted account, the customer is told at the start that the account cannot be serviced
-  here and how to contact SPR, and is never asked for credentials.
+  here and how to contact SPR, and is never asked for credentials. "At the start" means in the desk's first
+  reply, whatever the first turn asked (owner decision 2026-11-09, #82).
 - **FR-04** After 3 failed challenge attempts in a session, account-specific actions are locked for that
   session and a case is created.
 
@@ -149,7 +150,8 @@ Each item can be turned into an eval case or unit test that passes or fails with
 - **NG-03** Never changes beneficiaries, contact details or payout destinations. It explains the process and
   creates a case.
 - **NG-04** Never acts for anyone other than the session's verified owner. A spouse, child, beneficiary or
-  claimed attorney gets public product information and a case (D-09), never account information.
+  claimed attorney gets public product information and, for a bound account, a case (D-09), never account
+  information.
 - **NG-05** Never discloses or discusses another customer's account.
 - **NG-06** Never answers a product fact from model memory. If the knowledge base has no answer, it says so
   and offers a case.

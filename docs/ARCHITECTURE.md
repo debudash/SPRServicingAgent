@@ -227,6 +227,10 @@ sequenceDiagram
     end
 ```
 
+FR-03 at the start (#82): the desk's first reply in a session bound to an untrusted account carries the
+notice and the contact number, whatever the turn asked; a product question is still answered. A third
+party in an anonymous session gets no case (contracts 0.4.0): there is no account to open one for.
+
 Where the capture runs: at the runner's entry, before the customer turn is appended to the
 transcript, so the raw text never enters `ConversationState` (and so never reaches a checkpoint).
 The candidates live only in the per-turn context that `identity_gate` reads. A turn with no usable
