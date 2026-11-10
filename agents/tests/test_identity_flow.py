@@ -3,6 +3,7 @@
 G-B2-01..06, BH-B2-01 and BH-B2-02 (evals/golden/), plus the review hand-offs from PR #61.
 """
 
+import sqlite3
 from datetime import date
 
 import pytest
@@ -13,6 +14,7 @@ from contracts.messages import (
     AccountStatus,
     AccountView,
     AgeBand,
+    CasePacket,
     CaseReason,
     Intent,
     IntentKind,
@@ -273,3 +275,31 @@ def test_a_state_validation_error_fails_closed_as_a_contract_violation(wrong: st
     assert r.outcome is Outcome.UNAVAILABLE
     assert not r.provider_error
     assert "210,000" not in r.reply_text
+
+
+# ---------- #73: the lockout was lost when opening the lock case failed ----------
+# Found by /code-review on PR #72 (spec). D-08, GR-21: the lock holds if the case store fails.
+class BrokenCases(MemoryCases):
+    def open(self, packet: CasePacket) -> None:
+        raise sqlite3.OperationalError("database is locked")
+
+
+def test_issue_73_lock_holds_when_the_case_store_fails() -> None:
+    desk = Desk(*[IntentKind.VERIFY] * 4)
+    desk.cases = BrokenCases()
+    desk.runner._cases = desk.cases
+    turns = desk.talk(
+        "SPR-1001",
+        "1960-01-01 and 1111",
+        "1958-03-15 and 7832",
+        "1958-03-14 and 0000",
+        VERIFY_TEXT,
+    )
+    session = desk.runner._states[desk.conv].session
+    assert session.locked and session.failed_attempts == 3
+    assert desk.identity.checks == 3  # the right answer after the lock is never checked
+    locking = turns[2]
+    assert not locking.provider_error
+    assert locking.outcome is Outcome.NOT_PERMITTED
+    assert CONTACT in locking.reply_text and "case" in locking.reply_text.lower()
+    assert turns[3].outcome is Outcome.NOT_PERMITTED and "87,450.62" not in turns[3].reply_text

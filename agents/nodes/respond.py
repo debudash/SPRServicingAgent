@@ -44,6 +44,11 @@ LOCKED_TEXT = (
     "For your security, account actions are locked for this session after too many unsuccessful "
     f"identity checks. Please call SPR Financials at {CONTACT}."
 )
+LOCKED_NO_CASE_TEXT = (
+    "For your security, account actions are now locked for this session after three "
+    "unsuccessful identity checks. I couldn't open a case for the team just now, so please call "
+    f"SPR Financials at {CONTACT}."
+)
 OTHER_ACCOUNT_TEXT = (
     "I can only discuss the account you're signed in to. The owner of any other account would need "
     "to contact us themselves."
@@ -88,6 +93,9 @@ def _case_text(case_id: str, locked: bool) -> str:
 
 def decide(state: ConversationState, failure: str | None) -> tuple[Outcome, str, str | None]:
     """The turn's outcome, the reply text and the reference (a case ID) shown to the customer."""
+    if state.gate is GateResult.LOCKED_NOW and state.case_packet is None:
+        # Issue #73: the lock holds even when the case could not be opened; say so (GR-21).
+        return Outcome.NOT_PERMITTED, LOCKED_NO_CASE_TEXT, None
     if failure is not None or state.intent is None:
         return Outcome.UNAVAILABLE, UNAVAILABLE_TEXT, None
     kind = state.intent.kind
@@ -128,8 +136,6 @@ def _after_gate(state: ConversationState, gate: GateResult) -> tuple[Outcome, st
         return Outcome.NOT_PERMITTED, refusals[gate], None
     if gate is GateResult.FAILED:
         return Outcome.NOT_PERMITTED, _failed_text(state.session.failed_attempts), None
-    if gate is GateResult.LOCKED_NOW:  # the case node did not open its case: fail closed
-        return Outcome.UNAVAILABLE, UNAVAILABLE_TEXT, None
     if state.account_view is not None:  # PASSED or VERIFIED, and the account was read
         return Outcome.ANSWERED, _account_text(state.account_view), None
     if gate is GateResult.PASSED:

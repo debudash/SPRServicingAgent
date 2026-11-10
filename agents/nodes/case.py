@@ -4,6 +4,7 @@ The packet's free text is the already-masked turn, scrubbed a second time (ADR 0
 wording; no model writes any of it in B2.
 """
 
+import logging
 import uuid
 from typing import Any
 
@@ -13,6 +14,8 @@ from contracts.messages import CasePacket, CaseReason, IntentKind
 from contracts.ports import AuditEvent
 from contracts.state import ConversationState, GateResult
 from contracts.tools import Node, Step
+
+logger = logging.getLogger(__name__)
 
 _WHY: dict[CaseReason, tuple[str, str]] = {
     CaseReason.LOCKED: (
@@ -51,7 +54,16 @@ def make(deps: Deps) -> NodeFn:
             recommendation=recommendation,
         )
         deps.turn.record(Node.CASE, Step.CREATE_CASE)
-        deps.cases.open(packet)
+        # Issue #73 (found by /code-review on PR #72): a store error escaped the graph, and the
+        # runner then discarded the whole turn, including the lock identity_gate had just
+        # written, so the next try could pass (D-08). The node now fails closed inside the
+        # graph: the turn is marked failed, no packet is returned, and the lock is saved.
+        try:
+            deps.cases.open(packet)
+        except Exception:
+            logger.exception("case could not be opened")
+            deps.turn.failure = "case_unavailable"
+            return {}
         deps.audit.append(
             conversation_id=state.conversation_id,
             turn=state.turn,
