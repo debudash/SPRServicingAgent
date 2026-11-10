@@ -1,8 +1,11 @@
 # Paid LLM evals (API credits). Manual only, by design: while the build stabilises, evals run by hand
-# at milestones (end of B3, end of B5 and before release; see docs/PLAN.md), not on every PR. When the build is stable, a small
-# smoke subset can be added to PRs. That switch is a human decision, recorded as an ADR.
+# at milestones (end of B3, end of B5 and before release; see docs/PLAN.md), not on every PR. When the
+# build is stable, a small smoke subset can be added to PRs. That switch is a human decision, recorded
+# as an ADR.
 #
-# Placeholder until the `quality` lane builds the harness: it only checks the key is configured.
+# Runs the harness (evals/run.py) against the live desk (agents.wiring:build_runner) inside the same
+# image the desk runs in. The results (JSON and Markdown, restricted values redacted) are uploaded as
+# an artifact; the owner commits the ones worth keeping to evals/results/.
 
 name: evals
 
@@ -10,11 +13,22 @@ on:
   workflow_dispatch:
     inputs:
       suite:
-        description: "smoke (a few cases, cheap model) or full (all cases, repeats, model comparison)"
+        description: "golden, behavioural or all"
         required: true
-        default: smoke
+        default: all
         type: choice
-        options: [smoke, full]
+        options: [golden, behavioural, all]
+      bullet:
+        description: "Run the cases of this bullet and every one before it"
+        required: true
+        default: B3
+        type: choice
+        options: [B1, B2, B3, B4, B5]
+      repeat:
+        description: "Runs per case"
+        required: true
+        default: "1"
+        type: string
 
 permissions:
   contents: read
@@ -25,9 +39,39 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+
       - name: Check the API key is configured
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ -z "$ANTHROPIC_API_KEY" ]; then echo "::error::Set the ANTHROPIC_API_KEY secret first"; exit 1; fi
-          echo "Eval harness not built yet (suite: ${{ inputs.suite }}). See evals/ and docs/PLAN.md (B1 onward)."
+
+      - name: Run the evals in the desk image
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SUITE: ${{ inputs.suite }}
+          BULLET: ${{ inputs.bullet }}
+          REPEAT: ${{ inputs.repeat }}
+        run: |
+          # A throwaway approval key for this run only (GR-18): never stored, never logged.
+          APPROVAL_SECRET="$(openssl rand -hex 32)"
+          echo "::add-mask::$APPROVAL_SECRET"
+          export APPROVAL_SECRET
+          mkdir -p var evals/results
+          docker compose run --build --rm \
+            -e ANTHROPIC_API_KEY -e APPROVAL_SECRET \
+            -v "$PWD/evals/results:/app/evals/results" \
+            desk sh -c 'make ingest && python -m evals.run --suite "$0" --bullet "$1" --repeat "$2" --runner agents.wiring:build_runner' \
+            "$SUITE" "$BULLET" "$REPEAT"
+
+      - name: Summary
+        if: always()
+        run: cat evals/results/*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "No results written." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results-${{ inputs.bullet }}-${{ github.run_id }}
+          path: evals/results/
+          if-no-files-found: warn
