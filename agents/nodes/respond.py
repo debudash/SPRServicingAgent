@@ -1,14 +1,24 @@
 """respond: writes the Reply and the turn's one audit row (FR-10).
 
 Replies are built by code from the structured results: the gate decision, the account view (GR-02:
-figures straight from the record, formatted by `contracts.money`) or the case. No model writes them.
+figures straight from the record, formatted by `contracts.money`), the quote (#88) or the case. No
+model writes them.
 """
 
+from dataclasses import dataclass
 from typing import Any
 
 from agents.nodes import case
-from agents.nodes.common import ACCOUNT_INTENTS, Deps, NodeFn
-from contracts.messages import AccountView, IntentKind, Reply
+from agents.nodes.common import ACCOUNT_INTENTS, MONEY_INTENTS, Deps, NodeFn
+from agents.nodes.transaction import LIVE
+from contracts.messages import (
+    AccountView,
+    IntentKind,
+    Quote,
+    QuoteRefusalReason,
+    Reply,
+    ThresholdTier,
+)
 from contracts.money import format_dollars
 from contracts.outcomes import Outcome
 from contracts.ports import AuditEvent
@@ -74,6 +84,109 @@ STEP_UP_INCOMPLETE_TEXT = (
 )
 
 
+# ---------- #88: quotes and the yes ----------
+ASK_AMOUNT_TEXT = (
+    "How much would you like to withdraw? I'll show you an exact quote before anything happens."
+)
+NOTHING_TO_CONFIRM_TEXT = (
+    "There's no quote waiting for your answer, so nothing has been confirmed. Tell me how much "
+    "you'd like to withdraw and I'll quote it first."
+)
+STEP_UP_NEEDED_TEXT = (
+    "Thank you. Before any money moves, please complete the identity check. Nothing has been "
+    "withdrawn yet."
+)
+NOT_POSITIVE_TEXT = (
+    "I can only quote an amount greater than zero. How much would you like to withdraw?"
+)
+NOT_ACTIVE_TEXT = (
+    "I can't quote a withdrawal on this account because it isn't active. Please call SPR "
+    f"Financials at {CONTACT}."
+)
+
+
+@dataclass(frozen=True)
+class MoneyFacts:
+    """What respond needs about the money path beyond the state: this turn's refused quote and the
+    account it was quoted against (TurnContext), and whether the proposal is still live."""
+
+    refusal: QuoteRefusalReason | None = None
+    basis: AccountView | None = None
+    live: bool = False
+
+
+NO_MONEY = MoneyFacts()
+
+
+def _rate(rate_bp: int) -> str:
+    return f"{rate_bp / 100:g}%"
+
+
+def quote_text(quote: Quote, basis: AccountView | None) -> str:
+    """The quote, every figure from the Quote (GR-02), formatted here. The IRS notice is
+    information (FR-06, GR-08); the human tier is said up front (D-02)."""
+    amount = format_dollars(quote.amount_cents)
+    lead = f"Here's your quote for withdrawing {amount}"
+    if basis is not None:
+        lead += (
+            f", based on your current balance of {format_dollars(basis.balance_cents)} in "
+            f"contract year {quote.contract_year}"
+        )
+    lines = [
+        f"{lead}:",
+        f"- Free withdrawal allowance left this contract year: {format_dollars(quote.free_cents)}",
+        f"- Amount above the allowance: {format_dollars(quote.excess_cents)}",
+        f"- Surrender charge at {_rate(quote.rate_bp)} of that amount: "
+        f"{format_dollars(quote.charge_cents)}",
+        f"- You would receive: {format_dollars(quote.net_cents)}",
+    ]
+    if quote.irs_notice:
+        lines.append(
+            "Because you're under age 59½, the IRS may also apply a 10% early withdrawal penalty. "
+            "That's a federal tax matter, not an SPR Financials fee; a tax advisor can explain how "
+            "it applies to you."
+        )
+    if quote.threshold_tier is ThresholdTier.HUMAN:
+        lines.append("A withdrawal of this size is reviewed by our team before it's paid.")
+    lines.append(
+        "Nothing has been withdrawn. If you'd like to go ahead, reply with a clear yes for "
+        f"{amount}."
+    )
+    return "\n".join(lines)
+
+
+def _refusal_text(
+    reason: QuoteRefusalReason, amount_cents: int | None, basis: AccountView | None
+) -> str:
+    """FR-07: the reason, in words, and the next step (GR-20)."""
+    if reason is QuoteRefusalReason.NOT_ACTIVE:
+        return NOT_ACTIVE_TEXT
+    if reason is QuoteRefusalReason.NOT_POSITIVE or amount_cents is None:
+        return NOT_POSITIVE_TEXT
+    balance = f" of {format_dollars(basis.balance_cents)}" if basis is not None else ""
+    return (
+        f"I can't quote a withdrawal of {format_dollars(amount_cents)}: it's more than your "
+        f"current balance{balance}. Nothing has been withdrawn."
+    )
+
+
+def _clear_yes_text(amount_cents: int) -> str:
+    amount = format_dollars(amount_cents)
+    return (
+        f"To go ahead with the withdrawal of {amount}, I need a clear yes for that amount. "
+        "Nothing has been withdrawn."
+    )
+
+
+def _confirmed_text(amount_cents: int) -> str:
+    """The step-up already passed this session: the yes is recorded, and #89 (approval and
+    execution) takes it from here. Until then nothing moves, and the customer is told so."""
+    return (
+        f"Thank you, your yes for {format_dollars(amount_cents)} is recorded. Completing "
+        "withdrawals through the desk isn't available yet, so nothing has been withdrawn."
+    )
+
+
 def _failed_text(attempts: int) -> str:
     left = MAX_FAILED_CHALLENGES - attempts
     tries = "try" if left == 1 else "tries"
@@ -107,12 +220,15 @@ def _case_text(case_id: str, locked: bool) -> str:
 
 
 def decide(
-    state: ConversationState, failure: str | None, step_up: bool = False
+    state: ConversationState,
+    failure: str | None,
+    step_up: bool = False,
+    money: MoneyFacts = NO_MONEY,
 ) -> tuple[Outcome, str, str | None]:
     """The turn's outcome, the reply text and the reference (a case ID) shown to the customer."""
     if step_up:
         return _after_step_up(state, failure)
-    outcome, text, reference = _decide(state, failure)
+    outcome, text, reference = _decide(state, failure, money)
     return outcome, _first_turn_notice(state) + text, reference
 
 
@@ -155,7 +271,9 @@ def _first_turn_notice(state: ConversationState) -> str:
     return ""
 
 
-def _decide(state: ConversationState, failure: str | None) -> tuple[Outcome, str, str | None]:
+def _decide(
+    state: ConversationState, failure: str | None, money: MoneyFacts
+) -> tuple[Outcome, str, str | None]:
     if state.gate is GateResult.LOCKED_NOW and state.case_packet is None:
         # Issue #73: the lock holds even when the case could not be opened; say so (GR-21).
         return Outcome.NOT_PERMITTED, LOCKED_NO_CASE_TEXT, None
@@ -178,6 +296,8 @@ def _decide(state: ConversationState, failure: str | None) -> tuple[Outcome, str
     gate = state.gate
     if kind in ACCOUNT_INTENTS and gate is not None:
         return _after_gate(state, gate)
+    if kind in MONEY_INTENTS and gate is not None:
+        return _gate_refusal(state, gate) or _after_money(state, money)
     # Issue #74 (found by /code-review on PR #72): the outcome follows what was asked. Since
     # ADR 0007 typed credentials never reach the gate, so no gate result leads into these replies.
     if kind is IntentKind.PRODUCT_QUESTION:
@@ -192,7 +312,10 @@ def _decide(state: ConversationState, failure: str | None) -> tuple[Outcome, str
     return Outcome.NOT_PERMITTED, NOT_YET_TEXT, None
 
 
-def _after_gate(state: ConversationState, gate: GateResult) -> tuple[Outcome, str, str | None]:
+def _gate_refusal(
+    state: ConversationState, gate: GateResult
+) -> tuple[Outcome, str, str | None] | None:
+    """The gate's refusal for an account or money turn, or None when the gate let it through."""
     refusals = {
         GateResult.NO_CUSTOMER: NO_CUSTOMER_TEXT,
         GateResult.UNTRUSTED: UNTRUSTED_TEXT,
@@ -203,6 +326,36 @@ def _after_gate(state: ConversationState, gate: GateResult) -> tuple[Outcome, st
         return Outcome.NOT_PERMITTED, refusals[gate], None
     if gate is GateResult.FAILED:
         return Outcome.NOT_PERMITTED, _failed_text(state.session.failed_attempts), None
+    return None
+
+
+def _after_money(state: ConversationState, money: MoneyFacts) -> tuple[Outcome, str, str | None]:
+    """#88: a refused quote, a new quote, the yes, or what is still needed for one."""
+    intent, proposal, yes = state.intent, state.proposal, state.confirmation
+    if intent is None:  # _decide answers UNAVAILABLE first; kept for the type checker
+        return Outcome.UNAVAILABLE, UNAVAILABLE_TEXT, None
+    if money.refusal is not None:
+        text = _refusal_text(money.refusal, intent.amount_cents, money.basis)
+        return Outcome.NOT_PERMITTED, text, None
+    if proposal is not None and proposal.quoted_turn == state.turn:
+        return Outcome.ANSWERED, quote_text(proposal.quote, money.basis), None
+    if proposal is not None and money.live:
+        amount = proposal.quote.amount_cents
+        if yes is not None and yes.proposal_id == proposal.proposal_id:
+            if state.session.gate_b_passed:
+                return Outcome.NOT_PERMITTED, _confirmed_text(amount), None
+            return Outcome.ANSWERED, STEP_UP_NEEDED_TEXT, None
+        if not (intent.kind is IntentKind.WITHDRAWAL and intent.amount_cents is None):
+            return Outcome.ANSWERED, _clear_yes_text(amount), None
+    if intent.kind is IntentKind.WITHDRAWAL:
+        return Outcome.ANSWERED, ASK_AMOUNT_TEXT, None
+    return Outcome.NOT_PERMITTED, NOTHING_TO_CONFIRM_TEXT, None
+
+
+def _after_gate(state: ConversationState, gate: GateResult) -> tuple[Outcome, str, str | None]:
+    refused = _gate_refusal(state, gate)
+    if refused is not None:
+        return refused
     if state.account_view is not None:  # LOGGED_IN, PASSED or VERIFIED, and the account was read
         return Outcome.ANSWERED, _account_text(state.account_view), None
     return Outcome.UNAVAILABLE, UNAVAILABLE_TEXT, None  # passed, but the account was not read
@@ -210,7 +363,10 @@ def _after_gate(state: ConversationState, gate: GateResult) -> tuple[Outcome, st
 
 def make(deps: Deps) -> NodeFn:
     def respond(state: ConversationState) -> dict[str, Any]:
-        outcome, text, reference = decide(state, deps.turn.failure, deps.turn.step_up)
+        proposal = state.proposal
+        live = proposal is not None and deps.proposals.status(proposal.proposal_id) in LIVE
+        money = MoneyFacts(deps.turn.quote_refusal, deps.turn.quote_basis, live)
+        outcome, text, reference = decide(state, deps.turn.failure, deps.turn.step_up, money)
         reply = Reply(text=text, outcome=outcome, reference=reference)
         answered = outcome is Outcome.ANSWERED
         citations = (

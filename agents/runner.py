@@ -114,6 +114,10 @@ class GraphDeskRunner:
         )
         self._registry = ToolRegistry()
         self._registry.register(ToolName.SEARCH_KB, search.search)
+        # #88: the Transaction role's tools (TOOL_SCOPE); the registry refuses them to other roles.
+        self._registry.register(ToolName.GET_ACCOUNT, stores.accounts.view)
+        self._registry.register(ToolName.QUOTE, stores.quotes.quote)
+        self._registry.register(ToolName.PROPOSE, stores.proposals.save)
         self._states: dict[str, ConversationState] = {}
         self._turns_taken: dict[str, int] = {}
 
@@ -191,6 +195,7 @@ class GraphDeskRunner:
             accounts=self._stores.accounts,
             identity=self._stores.identity,
             cases=self._stores.cases,
+            proposals=self._stores.proposals,
         )
         state = _fresh_turn(prior, turn_no, started, text)
 

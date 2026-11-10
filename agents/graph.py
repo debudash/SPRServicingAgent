@@ -2,6 +2,8 @@
 
     intake -> concierge -> knowledge                                   -> respond
                         -> identity_gate -> (account | case | respond)  -> respond
+                        -> identity_gate -> transaction -> confirm      -> respond   (#88)
+                        -> identity_gate -> confirm                     -> respond   (#88)
                         -> case                                        -> respond
                         -> respond
     intake -> identity_gate -> (case | respond)        a step-up turn (the form, no chat text)
@@ -17,9 +19,21 @@ from typing import Any, cast
 
 from langgraph.graph import END, START, StateGraph
 
-from agents.nodes import account, case, concierge, identity_gate, intake, knowledge, respond
-from agents.nodes.common import ACCOUNT_INTENTS, Deps, NodeFn, TurnContext
+from agents.nodes import (
+    account,
+    case,
+    concierge,
+    confirm,
+    identity_gate,
+    intake,
+    knowledge,
+    respond,
+    transaction,
+)
+from agents.nodes.common import ACCOUNT_INTENTS, MONEY_INTENTS, Deps, NodeFn, TurnContext
+from agents.nodes.transaction import LIVE
 from contracts.messages import IntentKind
+from contracts.ports import ProposalStore
 from contracts.state import (
     MAX_HOPS_PER_TURN,
     MAX_SECONDS_PER_TURN,
@@ -75,14 +89,27 @@ def route_after_concierge(state: ConversationState, turn: TurnContext) -> str:
         return Node.RESPOND.value
     # ADR 0007: credentials typed into chat are masked and never checked, so only what was asked
     # decides the route.
-    if kind in ACCOUNT_INTENTS:
+    if kind in ACCOUNT_INTENTS or kind in MONEY_INTENTS:  # #88: a quote needs the login too
         return Node.IDENTITY_GATE.value
     if kind is IntentKind.PRODUCT_QUESTION:
         return Node.KNOWLEDGE.value
     return Node.RESPOND.value
 
 
-def route_after_gate(state: ConversationState, turn: TurnContext) -> str:
+def route_money(state: ConversationState, proposals: ProposalStore) -> str:
+    """#88: a stated amount that is not the live quote's is a new quote (BH-B3-02: a changed amount
+    is never a yes). Anything else is an answer to the live quote, which confirm judges."""
+    intent, proposal = state.intent, state.proposal
+    amount = intent.amount_cents if intent is not None else None
+    live = proposal is not None and proposals.status(proposal.proposal_id) in LIVE
+    if amount is not None and (
+        not live or proposal is None or amount != proposal.quote.amount_cents
+    ):
+        return Node.TRANSACTION.value
+    return Node.CONFIRM.value
+
+
+def route_after_gate(state: ConversationState, turn: TurnContext, proposals: ProposalStore) -> str:
     if turn.failure is not None:
         return Node.RESPOND.value
     if state.gate is GateResult.LOCKED_NOW:  # D-08: the third failure opens a case
@@ -92,11 +119,13 @@ def route_after_gate(state: ConversationState, turn: TurnContext) -> str:
     kind = state.intent.kind if state.intent is not None else None
     # Issue #74 (found by /code-review on PR #72): a turn that is not about the account continues
     # on its own route. Since ADR 0007 only account intents reach the gate, so this is a guard.
-    if kind not in ACCOUNT_INTENTS:
+    if kind not in ACCOUNT_INTENTS and kind not in MONEY_INTENTS:
         return Node.KNOWLEDGE.value if kind is IntentKind.PRODUCT_QUESTION else Node.RESPOND.value
-    if state.gate in (GateResult.LOGGED_IN, GateResult.PASSED, GateResult.VERIFIED):
-        return Node.ACCOUNT.value
-    return Node.RESPOND.value
+    if state.gate not in (GateResult.LOGGED_IN, GateResult.PASSED, GateResult.VERIFIED):
+        return Node.RESPOND.value
+    if kind in MONEY_INTENTS:
+        return route_money(state, proposals)
+    return Node.ACCOUNT.value
 
 
 def route_after_intake(state: ConversationState, turn: TurnContext) -> str:
@@ -116,6 +145,8 @@ def build_graph(deps: Deps) -> Any:
         (Node.IDENTITY_GATE, identity_gate),
         (Node.ACCOUNT, account),
         (Node.CASE, case),
+        (Node.TRANSACTION, transaction),
+        (Node.CONFIRM, confirm),
         (Node.RESPOND, respond),
     ):
         g.add_node(node.value, cast(Any, _guarded(node, module.make(deps), turn)))
@@ -132,10 +163,19 @@ def build_graph(deps: Deps) -> Any:
     )
     g.add_conditional_edges(
         Node.IDENTITY_GATE.value,
-        lambda s: route_after_gate(s, turn),
-        [Node.ACCOUNT.value, Node.CASE.value, Node.KNOWLEDGE.value, Node.RESPOND.value],
+        lambda s: route_after_gate(s, turn, deps.proposals),
+        [
+            Node.ACCOUNT.value,
+            Node.CASE.value,
+            Node.KNOWLEDGE.value,
+            Node.TRANSACTION.value,
+            Node.CONFIRM.value,
+            Node.RESPOND.value,
+        ],
     )
-    for node in (Node.KNOWLEDGE, Node.ACCOUNT, Node.CASE):
+    # #88: every quote passes confirm, which drops a yes given to the quote it replaced.
+    g.add_edge(Node.TRANSACTION.value, Node.CONFIRM.value)
+    for node in (Node.KNOWLEDGE, Node.ACCOUNT, Node.CASE, Node.CONFIRM):
         g.add_edge(node.value, Node.RESPOND.value)
     g.add_edge(Node.RESPOND.value, END)
     return g.compile()
