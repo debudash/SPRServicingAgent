@@ -6,6 +6,7 @@ The only module in `agents/` that imports from `data/`; everything else depends 
 import json
 import os
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
@@ -50,7 +51,16 @@ def build_runner() -> LoginDeskRunner:
     settings.var_dir.mkdir(parents=True, exist_ok=True)
     search = ChromaKnowledgeSearch(settings.chroma_dir, DefaultEmbeddingFunction())  # ADR 0006
     conn = open_desk_db(settings.desk_db)
-    return GraphDeskRunner(search=search, audit=SqliteAuditLog(conn), stores=build_stores(conn))
+    # Issue #126: the runner's clock defaulted to date.today, so the live desk answered as of the
+    # real date, not the as-of date (PRD D-04, DESK_AS_OF). Versions in force and date rules
+    # follow the clock, so the wiring passes the setting.
+    as_of = date.fromisoformat(settings.as_of)
+    return GraphDeskRunner(
+        search=search,
+        audit=SqliteAuditLog(conn),
+        clock=lambda: as_of,
+        stores=build_stores(conn),
+    )
 
 
 def build_stores(conn: sqlite3.Connection) -> Stores:

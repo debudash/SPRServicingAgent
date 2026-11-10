@@ -89,3 +89,33 @@ def test_demo_logins_are_seeded_only_when_switched_on(
 
 def test_picker_lists_the_starter_kit_customers() -> None:
     assert customer_ids() == ["SPR-1001", "SPR-1002", "SPR-1003", "SPR-1004"]
+
+
+# ---------- #126: the live desk answered as of today, not the as-of date ----------
+# Found by /code-review on PR #125 (spec): build_runner never passed settings.as_of as the clock.
+@pytest.mark.parametrize(
+    ("env", "expected"), [(None, date(2024, 12, 1)), ("2025-03-01", date(2025, 3, 1))]
+)
+def test_issue_126_the_desk_answers_as_of_the_setting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, env: str | None, expected: date
+) -> None:
+    import agents.wiring as wiring
+
+    built: dict[str, object] = {}
+
+    def fake_runner(**kwargs: object) -> object:
+        built.update(kwargs)
+        return object()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")  # never used: the runner is faked
+    monkeypatch.setenv("DESK_VAR_DIR", str(tmp_path))
+    if env is None:
+        monkeypatch.delenv("DESK_AS_OF", raising=False)
+    else:
+        monkeypatch.setenv("DESK_AS_OF", env)
+    monkeypatch.setattr(wiring, "DefaultEmbeddingFunction", lambda: None)
+    monkeypatch.setattr(wiring, "ChromaKnowledgeSearch", lambda *a: object())
+    monkeypatch.setattr(wiring, "GraphDeskRunner", fake_runner)
+    wiring.build_runner()
+    clock = built["clock"]
+    assert callable(clock) and clock() == expected
