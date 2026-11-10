@@ -321,13 +321,15 @@ class LoginDeskRunner(DeskRunner, Protocol):
     """`DeskRunner` with the login and the step-up. The next version folds these into
     `DeskRunner`, once the runner and the eval harness implement them (#102, #103)."""
 
-    def login(self, customer_id: str, password: str) -> "str | LoginRefused":
-        """Check the password, then open a conversation bound to the customer, with
-        `authenticated` set and Gate A read from the account. Returns the conversation ID."""
+    def login(self, customer_id: str, password: str) -> str | LoginRefused:
+        """Check the password (`PasswordCheck`), then open a conversation bound to the customer,
+        with `authenticated` and Gate A written by intake, their only writer. Returns the
+        conversation ID."""
         ...
 
     def step_up(self, conversation_id: str, dob: date, last4: str) -> TurnResult:
         """The step-up form's values, straight to the identity gate: never turn text, never in
         the transcript, trace or audit. Runs as a turn (pass, fail or lock), then continues the
-        flow that asked for it."""
+        confirmed proposal that asked for it (`state.step_up_pending`). With no step-up pending
+        it counts no attempt and returns NOT_PERMITTED."""
         ...

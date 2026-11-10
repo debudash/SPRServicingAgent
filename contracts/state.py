@@ -80,6 +80,9 @@ class GateResult(StrEnum):
     LOCKED_NOW = "locked_now"  # this turn's failure was the third: lock and open a case
     PASSED = "passed"  # Gate B passed this turn
     VERIFIED = "verified"  # Gate B passed on an earlier turn
+    # ADR 0007 (0.6.0): logged in on a trusted account, step-up not passed. Account actions are
+    # allowed; moving money still needs the step-up.
+    LOGGED_IN = "logged_in"
 
 
 def _challengeable(s: Session) -> bool:
@@ -99,6 +102,9 @@ GATE_REQUIRES: dict[GateResult, Callable[[Session], bool]] = {
     GateResult.LOCKED_NOW: lambda s: s.locked,
     GateResult.PASSED: lambda s: s.gate_b_passed and not s.locked,  # issue #108
     GateResult.VERIFIED: lambda s: s.gate_b_passed and not s.locked,
+    GateResult.LOGGED_IN: lambda s: (
+        s.authenticated and s.gate_a_trusted and not s.locked and not s.gate_b_passed
+    ),
 }
 
 
@@ -180,6 +186,15 @@ class ConversationState(_State):
         if self.gate is not None and not GATE_REQUIRES[self.gate](s):
             raise ValueError(f"gate {self.gate} contradicts the session (issue #62)")
         return self
+
+
+def step_up_pending(state: ConversationState) -> bool:
+    """ADR 0007: a step-up is pending when the customer has confirmed a withdrawal (the yes,
+    GR-17) in a session that has not passed the step-up and is not locked. That confirmed
+    proposal is the flow `step_up` continues. With none pending, a `step_up` call counts no
+    attempt and changes nothing (review on PR #106)."""
+    s = state.session
+    return state.confirmation is not None and not s.gate_b_passed and not s.locked
 
 
 # One writer per top-level field. `session` is created by intake and then written field by

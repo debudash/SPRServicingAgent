@@ -197,3 +197,46 @@ def test_issue_108_passed_and_verified_need_an_unlocked_session() -> None:
     )  # built past the validator, to test the gate table on its own
     assert not GATE_REQUIRES[GateResult.PASSED](locked_only)
     assert not GATE_REQUIRES[GateResult.VERIFIED](locked_only)
+
+
+# ---------- review follow-ups on PR #106 ----------
+def test_logged_in_is_the_gate_result_for_a_login_without_a_step_up() -> None:
+    from contracts.state import GATE_REQUIRES, GateResult
+
+    ok = GATE_REQUIRES[GateResult.LOGGED_IN]
+    assert ok(LOGGED_IN)
+    assert not ok(Session(customer_id="SPR-1001", gate_a_trusted=True))  # no login
+    assert not ok(Session(customer_id="SPR-1002", authenticated=True))  # Gate A fails
+    assert not ok(
+        Session(
+            customer_id="SPR-1001",
+            gate_a_trusted=True,
+            authenticated=True,
+            failed_attempts=3,
+            locked=True,
+        )
+    )
+    stepped_up = LOGGED_IN.model_copy(update={"gate_b_passed": True})
+    assert not ok(stepped_up)  # that is VERIFIED / PASSED
+    ConversationState(
+        conversation_id="CV1",
+        as_of=AS_OF,
+        session=LOGGED_IN,
+        versions=Versions(contracts=CONTRACTS_VERSION),
+        gate=GateResult.LOGGED_IN,
+        account_view=_view(),
+    )
+
+
+def test_a_step_up_is_pending_only_after_a_confirmed_yes_without_one() -> None:
+    from contracts.messages import Confirmation
+    from contracts.state import step_up_pending
+
+    yes = Confirmation(proposal_id="P-1", amount_cents=2_000_000, turn=2)
+    base = _state(LOGGED_IN)
+    assert not step_up_pending(base)  # nothing to continue
+    assert step_up_pending(base.model_copy(update={"confirmation": yes}))
+    passed = LOGGED_IN.model_copy(update={"gate_b_passed": True})
+    assert not step_up_pending(_state(passed).model_copy(update={"confirmation": yes}))
+    locked = LOGGED_IN.model_copy(update={"failed_attempts": 3, "locked": True})
+    assert not step_up_pending(_state(locked).model_copy(update={"confirmation": yes}))
