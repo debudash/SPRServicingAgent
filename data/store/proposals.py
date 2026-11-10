@@ -161,12 +161,17 @@ class SqliteApprovalStore:
         with immediate(self._conn):
             pid = approval.proposal_id
             before = read_status(self._conn, pid)  # KeyError for an unknown proposal
+            tier, confirmed_turn = self._conn.execute(
+                "SELECT threshold_tier, confirmed_turn FROM proposals WHERE proposal_id = ?", (pid,)
+            ).fetchone()
+            # Issue #98 (found by /code-review on PR #96): since #94 a proposal can be escalated
+            # before the customer's yes, and a reviewer's approve checked only the status, so an
+            # unconfirmed proposal executed (FR-08, GR-17). No approve, by anyone, without the yes.
+            if approval.decision is Decision.APPROVE and confirmed_turn is None:
+                raise ValueError("no approval before the customer's confirmation (GR-17)")
             if approval.approver == "compliance":
                 if before is not ProposalStatus.CONFIRMED:
                     raise ValueError(f"Compliance decides confirmed proposals, not {before}")
-                tier = self._conn.execute(
-                    "SELECT threshold_tier FROM proposals WHERE proposal_id = ?", (pid,)
-                ).fetchone()[0]
                 if approval.decision is Decision.APPROVE and tier != ThresholdTier.SELF_SERVICE:
                     raise ValueError("Compliance cannot approve a human-tier proposal (D-02)")
             elif before is not ProposalStatus.ESCALATED:

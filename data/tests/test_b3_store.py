@@ -674,3 +674,28 @@ def test_issue_99_move_cannot_stand_in_for_confirm_approve_or_execute(
     with pytest.raises(ValueError):
         store.move("P-1", target)
     assert store.status("P-1") is before
+
+
+# ---------- #98: a human approval executed a proposal the customer never confirmed ----------
+# Found by /code-review on PR #96 (spec): quoted -> escalated -> human approve -> executed (FR-08).
+def test_issue_98_no_approval_without_the_customers_yes(conn: sqlite3.Connection) -> None:
+    store = SqliteProposalStore(conn)
+    store.save(_proposal(conn))
+    store.move("P-1", ProposalStatus.ESCALATED)  # e.g. a human-tier quote sent to a case (#94)
+    with pytest.raises(ValueError):
+        _approve(conn, approver="human:r1")
+    assert store.status("P-1") is ProposalStatus.ESCALATED
+    assert _count(conn, "SELECT COUNT(*) FROM approvals") == 0
+    reason = _refused(_ledger(conn), "P-1", _token(conn))
+    assert reason is ExecutionRefusedReason.NOT_APPROVED
+    assert _transactions(conn) == 0
+
+
+def test_issue_98_a_reviewer_may_still_reject_an_unconfirmed_proposal(
+    conn: sqlite3.Connection,
+) -> None:
+    store = SqliteProposalStore(conn)
+    store.save(_proposal(conn))
+    store.move("P-1", ProposalStatus.ESCALATED)
+    _decide(conn, "human:r1", Decision.REJECT, "A-1")
+    assert store.status("P-1") is ProposalStatus.VOIDED
