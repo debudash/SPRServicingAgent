@@ -5,6 +5,7 @@ from pathlib import Path
 
 from data.knowledge_index.index import ChromaKnowledgeSearch
 from data.knowledge_index.loader import load_chunks
+from data.settings import DEFAULT_AS_OF
 
 REPO = Path(__file__).resolve().parents[2]
 DIM = 256
@@ -57,6 +58,22 @@ def test_real_knowledge_queries(tmp_path: Path) -> None:
     assert "fee_schedule" in {c.doc_id for c in top}
     rate = idx.search("interest rate", date(2024, 12, 1), k=3)
     assert any("4.25%" in c.text for c in rate)
+
+
+def test_real_knowledge_answers_only_from_versions_in_force(tmp_path: Path) -> None:
+    """At the as-of date every chunk returned is the version in force for its document, however
+    many superseded versions knowledge/ keeps (GR-04, #123)."""
+    chunks = load_chunks(REPO / "knowledge")
+    as_of = date.fromisoformat(DEFAULT_AS_OF)  # PRD D-04
+    in_force: dict[str, int] = {}
+    for c in chunks:
+        if c.effective_date <= as_of:
+            in_force[c.doc_id] = max(in_force.get(c.doc_id, 0), c.version)
+    idx = _index(tmp_path)
+    idx.rebuild(chunks)
+    got = idx.search("surrender charge rate in contract year 5", as_of, k=len(chunks))
+    assert got
+    assert all(c.version == in_force[c.doc_id] for c in got)
 
 
 def _doc(folder: Path, name: str, version: int, eff: str, body: str) -> None:
