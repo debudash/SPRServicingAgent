@@ -105,8 +105,9 @@ def test_case_is_well_formed(kind: str, case: dict[str, Any]) -> None:
             assert len(turn) == 1 and set(turn) <= TURN_KINDS, f"one kind per turn: {turn}"
             if "step_up" in turn:
                 answer = turn["step_up"]
-                assert answer == "correct" or sorted(answer) == ["dob", "last4"], answer
-                assert answer == "correct" or str(answer["last4"]).isdigit()
+                if answer != "correct":
+                    assert sorted(answer) == ["dob", "last4"], answer
+                    assert str(answer["last4"]).isdigit(), answer
     session = case.get("session") or {}
     assert set(session) <= SESSION_KEYS, f"unknown session keys: {set(session) - SESSION_KEYS}"
     assert session.get("step_up", "auto") in STEP_UP_MODES

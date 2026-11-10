@@ -104,7 +104,7 @@ provider. Each lane writes them red-first as its bullet starts.
 |---|---|---|---|
 | Quote calculator | FR-05 figures, half-up rounding, D-05 allowance net of earlier withdrawals, FR-07 refusals | data | B3 |
 | Clock and derivations | Contract year and age from the as-of date; stored ≠ derived fails data quality | data | B2 |
-| Identity gates | Gate A before credentials, Gate B per session, 3-attempt lockout | agents | B2 |
+| Identity gates | Login, then Gate A; Gate B as the step-up before money moves, once per session; 3-attempt lockout (ADR 0007) | agents | B2 |
 | Restricted-field scrubber | DOB and SSN digits removed from prompts, traces, logs, packets | data | B2 |
 | Rule engine | Threshold, status, waiver-request and age flags; Compliance cannot approve a flagged proposal | agents | B3 |
 | Approval token | Bound to the proposal hash; any change voids it | agents | B3 |
