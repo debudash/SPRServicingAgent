@@ -18,7 +18,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import ValidationError
 
 from agents.graph import build_graph
-from agents.guards.credentials import Credentials, capture
+from agents.guards.credentials import DOB_MASK, Credentials, capture
 from agents.llm import chat_model, load_model_map
 from agents.nodes.common import Deps, Stores, TurnContext
 from agents.nodes.respond import NO_STEP_UP_TEXT, UNAVAILABLE_TEXT
@@ -43,6 +43,22 @@ logger = logging.getLogger(__name__)
 _MODEL_ROLES = (Role.CONCIERGE, Role.KNOWLEDGE)
 # What the transcript keeps of a step-up: that the form was used, never its values (ADR 0007).
 STEP_UP_ENTRY = "[identity check submitted]"
+
+
+def _credential_in_play(state: ConversationState) -> bool:
+    """Whether a bare four-digit group in this turn should be masked as possible SSN digits.
+
+    Issue #114 (found by /code-review on PR #113): this was "bound, no step-up, not locked",
+    which meant "a chat challenge is outstanding" before ADR 0007. With the login it held for
+    every logged-in customer until the step-up, which comes after the quote, so "withdraw 5000"
+    reached the model as "[SSN-4]". A credential is in play only while the step-up form is shown
+    (the customer may type the answer into chat), or right after a turn that gave a date of birth
+    (#67: the last four sent on its own next turn). Otherwise an amount stays an amount.
+    """
+    if step_up_pending(state):
+        return True
+    said = [e.text for e in state.transcript if e.role == "customer"]
+    return bool(said) and DOB_MASK in said[-1]
 
 
 class GraphDeskRunner:
@@ -99,9 +115,7 @@ class GraphDeskRunner:
         # ADR 0005, narrowed by ADR 0007: mask credentials first, so the raw turn never enters the
         # state, the transcript, a model call or the trace. What is captured is discarded: typed
         # credentials are never checked (the step-up form is the only way in).
-        s = prior.session
-        challenge_open = s.customer_id is not None and not s.gate_b_passed and not s.locked
-        text, _ = capture(text, prior.as_of, challenge_open)
+        text, _ = capture(text, prior.as_of, _credential_in_play(prior))
         return self._turn(prior, text, TurnContext(started=started))
 
     def step_up(self, conversation_id: str, dob: date, last4: str) -> TurnResult:

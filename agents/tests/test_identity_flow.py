@@ -558,3 +558,31 @@ def test_issue_84_notice_comes_on_the_first_real_reply_after_a_failed_turn() -> 
     assert failed.outcome is Outcome.UNAVAILABLE
     assert first_real.outcome is Outcome.ANSWERED and CONTACT in first_real.reply_text
     assert CONTACT not in later.reply_text
+
+
+# ---------- #114: withdrawal amounts were masked as SSN digits for every logged-in customer ----
+# Found by /code-review on PR #113 (spec): "withdraw 5000" reached the model as "[SSN-4]".
+def _seen_by_concierge(desk: Desk) -> str:
+    return " ".join(str(m.content) for call in desk.concierge.calls for m in call)
+
+
+def test_issue_114_a_logged_in_customers_amount_stays_an_amount() -> None:
+    desk = Desk(IntentKind.WITHDRAWAL)
+    desk.talk("SPR-1001", "I want to withdraw 5000")
+    assert "withdraw 5000" in _seen_by_concierge(desk)
+    assert "withdraw 5000" in desk.state().transcript[0].text
+
+
+def test_issue_114_a_bare_last_four_is_masked_while_the_step_up_is_shown() -> None:
+    desk = Desk(IntentKind.OTHER)
+    desk.login("SPR-1001")
+    put_pending_confirmation(desk.runner, desk.conv)
+    desk.runner.send(desk.conv, "7823")  # typed into chat instead of the form
+    assert "7823" not in desk.everything_kept()
+
+
+def test_issue_114_a_last_four_after_a_dob_turn_is_still_masked() -> None:
+    # The #67 case (a DOB, then the last four on its own next turn) keeps its mask.
+    desk = Desk(IntentKind.OTHER, IntentKind.OTHER)
+    desk.talk("SPR-1001", "My date of birth is 1958-03-14.", "7823")
+    assert "7823" not in desk.everything_kept() and "1958-03-14" not in desk.everything_kept()
