@@ -179,6 +179,18 @@ class MemoryProposals:
         self.statuses[proposal_id] = status
 
 
+class MemoryPolicy:
+    """`PolicySource` over fixed chunks (#89): every query returns them, up to k."""
+
+    def __init__(self, chunks: Sequence[Any]) -> None:
+        self.chunks = list(chunks)
+        self.queries: list[str] = []
+
+    def get_policy(self, query: str, as_of: date, k: int = 4) -> list[Any]:
+        self.queries.append(query)
+        return self.chunks[:k]
+
+
 def put_pending_confirmation(runner: Any, conversation_id: str) -> None:
     """Stand in for a quote and its yes (#88), so a step-up is pending. Test-only: it saves and
     confirms a proposal in the runner's store, which decides whether the yes still stands
