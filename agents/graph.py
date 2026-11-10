@@ -9,9 +9,8 @@
     intake -> identity_gate -> (case | respond)        a step-up turn (the form, no chat text)
 
     #89, once a confirmed proposal's step-up has passed (on the step-up turn, or on a later yes):
-    ... -> rules -> case                                             (a flag: a person decides)
     ... -> rules -> compliance -> approval -> execute    -> respond   (approve: one execution)
-                                          -> case       -> respond   (hold or escalate)
+                                          -> case       -> respond   (hold, escalate, any flag)
     A human-tier quote the customer asks to go ahead with goes from confirm to case (GR-19).
 
 Routing is code (ADR 0003): the model classifies, it never picks the next node. Every node's
@@ -154,10 +153,17 @@ def route_after_confirm(
     return Node.RESPOND.value
 
 
-def route_after_rules(state: ConversationState, turn: TurnContext) -> str:
+def route_after_rules(state: ConversationState, turn: TurnContext, can_review: bool) -> str:
+    """Issue #137 (found by /code-review on PR #135): a flagged proposal went straight to a case,
+    but FR-11 has Compliance review every proposal (it cannot approve a flagged one), and the
+    reviewer's packet needs its reasons (BH-B4-01). So every proposal goes to Compliance; the
+    flags make its approve impossible. Only with no policy source wired (no money path) does a
+    flagged proposal go straight to a person."""
     if turn.failure is not None or state.rule_flags is None:
         return Node.RESPOND.value
-    return Node.CASE.value if state.rule_flags.flags else Node.COMPLIANCE.value
+    if state.rule_flags.flags and not can_review:
+        return Node.CASE.value
+    return Node.COMPLIANCE.value
 
 
 def route_after_compliance(state: ConversationState, turn: TurnContext) -> str:
@@ -253,7 +259,7 @@ def build_graph(deps: Deps) -> Any:
     )
     g.add_conditional_edges(
         Node.RULES.value,
-        lambda s: route_after_rules(s, turn),
+        lambda s: route_after_rules(s, turn, deps.money is not None),
         [Node.CASE.value, Node.COMPLIANCE.value, Node.RESPOND.value],
     )
     g.add_conditional_edges(

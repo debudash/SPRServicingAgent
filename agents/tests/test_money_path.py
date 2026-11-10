@@ -17,7 +17,15 @@ from agents.nodes.compliance import ComplianceDraft, DraftReason
 from agents.runner import GraphDeskRunner
 from agents.testing import MemoryPolicy, ScriptedChatModel
 from agents.wiring import build_stores, money_path, open_desk_db
-from contracts.messages import CaseReason, Intent, IntentKind, ProposalStatus, Signal
+from contracts.messages import (
+    CaseReason,
+    Decision,
+    Intent,
+    IntentKind,
+    ProposalStatus,
+    RuleFlag,
+    Signal,
+)
 from contracts.outcomes import Outcome
 from contracts.ports import AuditEvent, KnowledgeChunk, TurnResult
 from contracts.tools import Node, Role, Step
@@ -246,14 +254,15 @@ def test_an_approval_citing_no_retrieved_policy_is_escalated(tmp_path: Path) -> 
     assert r.outcome is Outcome.NEEDS_HUMAN and desk.executions() == 0  # FR-11
 
 
-def test_the_human_tier_never_reaches_compliance(tmp_path: Path) -> None:
+def test_the_human_tier_is_reviewed_but_never_approved(tmp_path: Path) -> None:
+    # #137: Compliance reviews every proposal (FR-11); the D-02 flag makes its approve impossible.
     desk = Desk(tmp_path, [withdraw(30_000), confirm(30_000)], [review()]).login()
     desk.say("Withdraw $30,000.")  # over $25,000 (D-02)
     desk.say("Yes, go ahead with $30,000.")
     r = desk.step_up()
     assert r.outcome is Outcome.NEEDS_HUMAN and desk.executions() == 0
-    assert desk.compliance.calls == []
     assert AuditEvent.RULE_FLAGGED in desk.events()
+    assert AuditEvent.TOKEN_ISSUED not in desk.events()
 
 
 def test_the_kill_switch_sends_every_withdrawal_to_a_person(tmp_path: Path) -> None:
@@ -262,7 +271,7 @@ def test_the_kill_switch_sends_every_withdrawal_to_a_person(tmp_path: Path) -> N
     desk.say("Yes, go ahead with $5,000.")
     r = desk.step_up()
     assert r.outcome is Outcome.NEEDS_HUMAN and desk.executions() == 0  # FR-26
-    assert desk.compliance.calls == []
+    assert AuditEvent.TOKEN_ISSUED not in desk.events()  # reviewed (#137), never approved
 
 
 def test_no_secret_no_token_no_execution(tmp_path: Path) -> None:
@@ -338,3 +347,30 @@ def test_issue_136_a_withdrawal_with_a_person_cannot_be_split(tmp_path: Path) ->
     r = desk.say("Yes, go ahead with $20,000.")
     assert r.outcome is Outcome.NEEDS_HUMAN
     assert desk.executions() == 0
+
+
+# ---------- #137: flagged proposals skipped the Compliance review ----------
+# Found by /code-review on PR #135 (spec): FR-11 "Every proposal is reviewed by the Compliance
+# agent"; BH-B4-01 expects compliance_review before create_case, with compliance_reasons.
+def test_issue_137_a_flagged_proposal_is_reviewed_before_its_case(tmp_path: Path) -> None:
+    desk = Desk(tmp_path, [withdraw(30_000), confirm(30_000)], [review("escalate")]).login()
+    desk.say("Withdraw $30,000.")  # over $25,000 (D-02)
+    desk.say("Yes, go ahead with $30,000.")
+    r = desk.step_up()
+    assert r.outcome is Outcome.NEEDS_HUMAN and desk.executions() == 0
+    assert _is_subsequence([Step.QUOTE, Step.COMPLIANCE_REVIEW, Step.CREATE_CASE], desk.steps())
+    packet = desk.runner._states[desk.conv].case_packet
+    assert packet is not None and packet.compliance_reasons  # FR-16
+    assert RuleFlag.OVER_AMOUNT in packet.rule_flags
+    assert packet.compliance_decision is Decision.ESCALATE
+
+
+def test_issue_137_compliance_cannot_approve_a_flagged_proposal(tmp_path: Path) -> None:
+    desk = Desk(tmp_path, [withdraw(30_000), confirm(30_000)], [review("approve")]).login()
+    desk.say("Withdraw $30,000.")
+    desk.say("Yes, go ahead with $30,000.")
+    r = desk.step_up()
+    assert r.outcome is Outcome.NEEDS_HUMAN and desk.executions() == 0  # FR-11
+    assert AuditEvent.TOKEN_ISSUED not in desk.events()
+    packet = desk.runner._states[desk.conv].case_packet
+    assert packet is not None and packet.compliance_decision is Decision.ESCALATE
