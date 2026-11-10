@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +11,7 @@ import pytest
 
 from contracts.messages import Citation
 from contracts.outcomes import Outcome
-from contracts.ports import TurnResult
+from contracts.ports import LoginRefused, TurnResult
 from contracts.tools import Step
 from evals import run as run_mod
 from evals.score import FAIL, NA, PASS, Restricted, case_status, score_case
@@ -23,18 +24,30 @@ def turn(text: str = "ok", outcome: Outcome = Outcome.ANSWERED, **kw: Any) -> Tu
 
 
 class FakeRunner:
+    """A LoginDeskRunner fake: `replies` answer send and step_up in order."""
+
     def __init__(self, replies: list[TurnResult] | None = None) -> None:
         self.replies = replies or []
         self.sent: list[tuple[str, str]] = []
         self.started: list[str | None] = []
+        self.logins: list[tuple[str, str]] = []
+        self.step_ups: list[tuple[str, date, str]] = []
 
     def start(self, customer_id: str | None) -> str:
         self.started.append(customer_id)
-        return "c1"
+        return "guest"
+
+    def login(self, customer_id: str, password: str) -> str | LoginRefused:
+        self.logins.append((customer_id, password))
+        return "c1" if password.endswith("-demo") else LoginRefused()
 
     def send(self, conversation_id: str, text: str) -> TurnResult:
         self.sent.append((conversation_id, text))
         return self.replies.pop(0) if self.replies else turn()
+
+    def step_up(self, conversation_id: str, dob: date, last4: str) -> TurnResult:
+        self.step_ups.append((conversation_id, dob, last4))
+        return self.replies.pop(0) if self.replies else turn("confirmed")
 
 
 def test_pass() -> None:
@@ -123,7 +136,6 @@ cases:
   - id: BH-B1-01
     bullet: B1
     customer: SPR-1001
-    session: {gate_b_passed: true}
     turns:
       - user: "withdraw"
       - user: "yes"
@@ -134,6 +146,20 @@ cases:
     customer: null
     ask: "x"
     expect: {outcome: ANSWERED}
+  - id: BH-B1-03
+    bullet: B1
+    status: retired
+    customer: SPR-1001
+    turns:
+      - user: "old"
+    expect: {final_outcome: ANSWERED}
+  - id: BH-B1-04
+    bullet: B1
+    customer: SPR-1001
+    turns:
+      - user: "submit"
+      - reviewer: approve
+    expect: {final_outcome: EXECUTED}
 """
 
 
@@ -149,27 +175,83 @@ def test_run_suite_skips_pending_and_later_bullets(tmp_path: Path) -> None:
     assert ran == {"G-B1-01", "BH-B1-01"}
     reasons = {n["case_id"]: n["reason"] for n in res["not_run"]}
     assert reasons["BH-B1-02"] == "pending_data"
+    assert reasons["BH-B1-03"] == "retired"  # ADR 0007 / #117: reported, never run
+    assert "reviewer" in reasons["BH-B1-04"]
     assert "G-B2-01" in reasons
     assert res["not_checked"] == {"G-B1-01": ["cites_version"]}
 
 
-def test_gate_b_sends_unscored_verification_without_leaking(tmp_path: Path) -> None:
-    runner = FakeRunner([turn("verified"), turn("quote"), turn("done", Outcome.EXECUTED)])
-    # first case in file order is golden: give it a reply first
-    runner.replies.insert(0, turn("ok"))
+# ---------- #103 (ADR 0007): login, guests and the step-up ----------
+def test_a_customer_case_logs_in_with_the_demo_password_and_a_guest_starts(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner()
+    run(tmp_path, runner)
+    assert runner.started == [None]  # G-B1-01 is a guest
+    assert runner.logins == [("SPR-1001", "margaret-demo")]
+
+
+def test_the_harness_answers_a_step_up_and_scores_that_turn(tmp_path: Path) -> None:
+    # The golden case answers first; BH-B1-01's "yes" asks for the step-up.
+    runner = FakeRunner(
+        [
+            turn("ok"),
+            turn("quote"),
+            turn("confirm it", step_up_required=True),
+            turn("done", Outcome.EXECUTED),
+        ]
+    )
     res = run(tmp_path, runner)
     bh = next(r for r in res["records"] if r["case_id"] == "BH-B1-01")
-    assert bh["verdict"] == PASS
-    assert len(bh["trace"]) == 2  # verification turn not in the trace
-    verification = [t for _, t in runner.sent if "date of birth" in t]
-    assert len(verification) == 1
-    assert DOB in verification[0]
-    assert runner.started == [None, "SPR-1001"]
+    assert bh["verdict"] == PASS  # the final outcome is the step-up turn's: EXECUTED
+    assert len(bh["trace"]) == 3
+    assert runner.step_ups == [("c1", date(1958, 3, 14), LAST4)]
+    assert all(DOB not in text and LAST4 not in text for _, text in runner.sent)  # never chat
     out_json, out_md = run_mod.write_results(res, tmp_path / "out")
     for p in (out_json, out_md):
         text = p.read_text()
         assert DOB not in text
         assert f'"{LAST4}"' not in text
+
+
+def test_a_manual_case_scripts_its_step_ups_and_gets_no_automatic_one(tmp_path: Path) -> None:
+    behavioural = """
+cases:
+  - id: BH-B1-09
+    bullet: B1
+    customer: SPR-1001
+    session: {step_up: manual}
+    turns:
+      - user: "yes"
+      - step_up: {dob: "1960-01-01", last4: "1111"}
+      - step_up: correct
+    expect: {final_outcome: ANSWERED}
+"""
+    write_golden(tmp_path, "cases: []\n", behavioural)
+    runner = FakeRunner([turn("confirm it", step_up_required=True)])
+    run_mod.run_suite(runner, suite="behavioural", bullet="B1", golden_dir=tmp_path)
+    assert runner.step_ups == [
+        ("c1", date(1960, 1, 1), "1111"),
+        ("c1", date(1958, 3, 14), LAST4),
+    ]
+
+
+def test_a_refused_login_fails_the_case(tmp_path: Path) -> None:
+    behavioural = """
+cases:
+  - id: BH-B1-09
+    bullet: B1
+    customer: SPR-9999
+    turns:
+      - user: "hi"
+    expect: {final_outcome: ANSWERED}
+"""
+    write_golden(tmp_path, "cases: []\n", behavioural)
+    runner = FakeRunner()
+    res = run_mod.run_suite(runner, suite="behavioural", bullet="B1", golden_dir=tmp_path)
+    [rec] = res["records"]
+    assert (rec["verdict"], rec["failed_key"]) == (FAIL, "login")
+    assert runner.sent == []
 
 
 def test_leaked_value_fails_and_is_redacted(tmp_path: Path) -> None:
@@ -180,8 +262,15 @@ def test_leaked_value_fails_and_is_redacted(tmp_path: Path) -> None:
     assert DOB not in out_json.read_text()
 
 
-def test_provider_error_in_setup_is_na(tmp_path: Path) -> None:
-    runner = FakeRunner([turn("ok"), turn(provider_error=True)])
+def test_provider_error_in_a_step_up_is_na(tmp_path: Path) -> None:
+    runner = FakeRunner(
+        [
+            turn("ok"),
+            turn("quote"),
+            turn("confirm", step_up_required=True),
+            turn(provider_error=True),
+        ]
+    )
     res = run(tmp_path, runner)
     bh = next(r for r in res["records"] if r["case_id"] == "BH-B1-01")
     assert bh["verdict"] == NA
@@ -189,7 +278,7 @@ def test_provider_error_in_setup_is_na(tmp_path: Path) -> None:
 
 def test_repeat_and_scorecard(tmp_path: Path) -> None:
     res = run(tmp_path, FakeRunner(), repeat=3)
-    assert len(res["records"]) == 6
+    assert len(res["records"]) == 6  # two runnable cases x 3
     _, md = run_mod.write_results(res, tmp_path / "out")
     text = md.read_text()
     assert "Not yet run" in text and "G-B2-01" in text and "Not checked yet" in text

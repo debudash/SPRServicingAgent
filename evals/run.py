@@ -1,11 +1,16 @@
-"""Run golden and behavioural cases through any `contracts.ports.DeskRunner` (EVAL_SPEC section 2).
+"""Run golden and behavioural cases through a `contracts.ports.LoginDeskRunner` (EVAL_SPEC 2).
 
     python -m evals.run --suite golden|behavioural|all --bullet B1 [--repeat 3] [--out DIR]
                         [--runner package.module:factory]
 
-The real runner is wired later; `--runner` names a zero-argument factory returning a DeskRunner.
-Restricted values (date of birth, SSN digits) are read only to run the unscored verification turn
-and to check replies; they are redacted from everything written to the results file.
+`--runner` names a zero-argument factory returning a LoginDeskRunner.
+
+Sessions (ADR 0007, evals/golden/README.md): a customer case logs in with that customer's demo
+password; `customer: null` is a guest. When a turn returns `step_up_required`, the harness answers
+the step-up form with the customer's values and scores that turn (`session.step_up: auto`), unless
+the case scripts its step-ups (`manual`). Restricted values (date of birth, SSN digits) are read
+only to answer the step-up and to check replies; they go only to `runner.step_up`, never into a
+chat message, and are redacted from everything written to the results file.
 """
 
 from __future__ import annotations
@@ -14,15 +19,15 @@ import argparse
 import importlib
 import json
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from contracts.ports import DeskRunner, TurnResult
+from contracts.ports import LoginDeskRunner, LoginRefused, TurnResult
 from evals.score import (
-    NA,
+    FAIL,
     Restricted,
     not_checked_keys,
     render_markdown,
@@ -32,6 +37,7 @@ from evals.score import (
 ROOT = Path(__file__).resolve().parents[1]
 GOLDEN = ROOT / "evals" / "golden"
 ACCOUNTS = ROOT / "problemstmt" / "spr_starter_kit" / "data" / "accounts.json"
+DEMO_LOGINS = ROOT / "data" / "demo_logins.json"  # ADR 0007: the simulated login
 RESULTS = ROOT / "evals" / "results"
 BULLET_ORDER = ("B1", "B2", "B3", "B4", "B5")
 SUITE_FILES = {"golden": "golden.yaml", "behavioural": "behavioural.yaml"}
@@ -52,10 +58,18 @@ def load_identities(path: Path = ACCOUNTS) -> dict[str, tuple[str, str]]:
     return {a["customer_id"]: (a["dob"], a["last4_ssn"]) for a in accounts}
 
 
-def case_turns(case: dict[str, Any]) -> list[str]:
+def load_passwords(path: Path = DEMO_LOGINS) -> dict[str, str]:
+    """customer_id -> demo password, for logging a case in. Stays inside the harness."""
+    passwords: dict[str, str] = json.loads(path.read_text())["passwords"]
+    return passwords
+
+
+def case_turns(case: dict[str, Any]) -> list[dict[str, Any]]:
+    """The case's turns, each `{"user": text}`, `{"step_up": ...}` or `{"reviewer": ...}`."""
     if "turns" in case:
-        return [t["user"] for t in case["turns"]]
-    return [case["ask"]]
+        turns: list[dict[str, Any]] = case["turns"]
+        return turns
+    return [{"user": case["ask"]}]
 
 
 def select(
@@ -68,10 +82,12 @@ def select(
     for case in cases:
         if case["bullet"] not in started:
             reason = f"bullet {case['bullet']} not started"
-        elif case.get("status", "active") == "pending_data":
-            reason = "pending_data"
+        elif (status := case.get("status", "active")) in ("pending_data", "retired"):
+            reason = status  # retired: the spec no longer describes it (#117)
         elif case.get("faults"):
             reason = "fault injection is not available through DeskRunner yet"
+        elif any("reviewer" in t for t in case_turns(case)):
+            reason = "reviewer turns are not available through DeskRunner yet"
         else:
             to_run.append(case)
             continue
@@ -79,31 +95,58 @@ def select(
     return to_run, not_run
 
 
+def _step_up_values(
+    answer: Any, customer: str, identities: dict[str, tuple[str, str]]
+) -> tuple[date, str]:
+    """`correct` is the customer's stored values; otherwise the case's own `{dob, last4}`."""
+    dob, last4 = identities[customer] if answer == "correct" else (answer["dob"], answer["last4"])
+    return date.fromisoformat(str(dob)), str(last4)
+
+
+def _play(
+    runner: LoginDeskRunner,
+    conversation: str,
+    case: dict[str, Any],
+    identities: dict[str, tuple[str, str]],
+) -> list[TurnResult]:
+    """Every turn of the case, plus each automatic step-up the desk asks for (`auto`)."""
+    customer = str(case.get("customer"))
+    auto = (case.get("session") or {}).get("step_up", "auto") == "auto"
+    turns: list[TurnResult] = []
+    for step in case_turns(case):
+        if "step_up" in step:
+            result = runner.step_up(
+                conversation, *_step_up_values(step["step_up"], customer, identities)
+            )
+        else:
+            result = runner.send(conversation, str(step["user"]))
+        turns.append(result)
+        if not result.provider_error and auto and result.step_up_required:
+            result = runner.step_up(conversation, *_step_up_values("correct", customer, identities))
+            turns.append(result)
+        if result.provider_error:
+            break
+    return turns
+
+
 def run_case_once(
-    runner: DeskRunner,
+    runner: LoginDeskRunner,
     case: dict[str, Any],
     identities: dict[str, tuple[str, str]],
     restricted: Restricted,
+    passwords: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     customer = case.get("customer")
-    conversation = runner.start(customer)
-    setup_error = False
-    if (case.get("session") or {}).get("gate_b_passed"):
-        dob, last4 = identities[str(customer)]
-        verify = runner.send(
-            conversation, f"My date of birth is {dob} and the last four of my SSN are {last4}."
-        )
-        setup_error = verify.provider_error  # run, not scored
-    turns: list[TurnResult] = []
-    if not setup_error:
-        for text in case_turns(case):
-            result = runner.send(conversation, text)
-            turns.append(result)
-            if result.provider_error:
-                break
-    if setup_error:
-        score_verdict, key, detail = NA, None, "provider error"
+    if customer is None:
+        session: str | LoginRefused = runner.start(None)
     else:
+        session = runner.login(str(customer), (passwords or {}).get(str(customer), ""))
+    turns: list[TurnResult] = []
+    key: str | None
+    if isinstance(session, LoginRefused):
+        score_verdict, key, detail = FAIL, "login", f"login refused for {customer}"
+    else:
+        turns = _play(runner, session, case, identities)
         scored = score_case(case.get("expect") or {}, turns, restricted)
         score_verdict, key, detail = scored.verdict, scored.failed_key, scored.detail
     last = turns[-1] if turns else None
@@ -132,16 +175,18 @@ def run_case_once(
 
 
 def run_suite(
-    runner: DeskRunner,
+    runner: LoginDeskRunner,
     *,
     suite: str,
     bullet: str,
     repeat: int = 1,
     golden_dir: Path = GOLDEN,
     accounts: Path = ACCOUNTS,
+    logins: Path = DEMO_LOGINS,
     run_id: str | None = None,
 ) -> dict[str, Any]:
     identities = load_identities(accounts)
+    passwords = load_passwords(logins)
     restricted = Restricted(
         frozenset(d for d, _ in identities.values()), frozenset(s for _, s in identities.values())
     )
@@ -149,7 +194,7 @@ def run_suite(
     records: list[dict[str, Any]] = []
     for case in to_run:
         for n in range(1, repeat + 1):
-            rec = run_case_once(runner, case, identities, restricted)
+            rec = run_case_once(runner, case, identities, restricted, passwords)
             records.append({**rec, "repeat": n})
     results = {
         "run_id": run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ"),
@@ -175,25 +220,23 @@ def write_results(results: dict[str, Any], out: Path) -> tuple[Path, Path]:
     return json_path, md_path
 
 
-def _load_runner(spec: str) -> DeskRunner:
+def _load_runner(spec: str) -> LoginDeskRunner:
     module, _, attr = spec.partition(":")
-    runner: DeskRunner = getattr(importlib.import_module(module), attr)()
+    runner: LoginDeskRunner = getattr(importlib.import_module(module), attr)()
     return runner
 
 
-def main(argv: Sequence[str] | None = None, runner: DeskRunner | None = None) -> int:
+def main(argv: Sequence[str] | None = None, runner: LoginDeskRunner | None = None) -> int:
     parser = argparse.ArgumentParser(prog="evals.run")
     parser.add_argument("--suite", choices=["golden", "behavioural", "all"], default="all")
     parser.add_argument("--bullet", choices=BULLET_ORDER, default="B1")
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--out", type=Path, default=RESULTS)
-    parser.add_argument("--runner", help="module:factory returning a DeskRunner")
+    parser.add_argument("--runner", help="module:factory returning a LoginDeskRunner")
     args = parser.parse_args(argv)
     if runner is None:
         if not args.runner:
-            parser.error(
-                "no DeskRunner: pass --runner module:factory (the real one is wired later)"
-            )
+            parser.error("no runner: pass --runner module:factory returning a LoginDeskRunner")
         runner = _load_runner(args.runner)
     results = run_suite(runner, suite=args.suite, bullet=args.bullet, repeat=args.repeat)
     json_path, md_path = write_results(results, args.out)
