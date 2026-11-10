@@ -125,9 +125,8 @@ def pinned_rules(cases: list[dict[str, Any]]) -> set[str]:
 
 # Rules whose only case waits on data (`pending_data`): named here, with the reason, so the gap is
 # visible and reviewed rather than hidden by counting a case that never runs (#118).
-AWAITING_DATA = {
-    "GR-04": "BH-B4-02 needs the superseded fee-schedule version (PG-05)",
-}
+# Empty since #123: BH-B4-02 runs on the synthetic superseded fee schedule.
+AWAITING_DATA: dict[str, str] = {}
 
 
 def test_every_rule_is_pinned_by_a_case() -> None:

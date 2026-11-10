@@ -189,7 +189,7 @@ sequenceDiagram
     KB-->>KN: chunks (doc_id, version, section)
     KN-->>G: answer + citations
     G->>R: structured result
-    R-->>C: "3% in year 5 [fee_schedule v1 §Surrender Charges]"
+    R-->>C: "3% in year 5 [fee_schedule v2 §Surrender Charges]"
     Note over G: audit: answered · outcome ANSWERED
 ```
 

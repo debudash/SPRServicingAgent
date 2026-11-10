@@ -204,15 +204,18 @@ cases:
     bullet: B4
     rules: [GR-04, GR-01]
     prd: [FR-24]
-    status: pending_data
     customer: null
     turns:
       - user: "What's the surrender charge in year 5?"
     expect:
       final_outcome: ANSWERED
       contains: ["3%"]
+      cites: [fee_schedule]
       cites_version: current
-    note: Needs the superseded fee-schedule version from the data lane (PG-05). The current version must win.
+    note: >-
+      knowledge/ holds two fee schedules: v1 (synthetic, superseded 2020-01-01, Year 5 at 4%) and v2 (the
+      starter kit, Year 5 at 3%). At the as-of date v2 is in force, so the answer is 3% and cites v2 (GR-04).
+      Owner decision 2026-11-10 (#123).
 
   # ---------- B5 ----------
   - id: BH-B5-01
