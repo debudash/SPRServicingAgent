@@ -71,13 +71,14 @@ Each item can be turned into an eval case or unit test that passes or fails with
 ### Identity and access
 - **FR-01** Product and policy questions are answered without identity, from the knowledge base, and every
   answer cites document ID, version and section.
-- **FR-02** Account-specific information (balance, contract year, allowance, quotes) is given only when Gate A
-  (account trusted) and Gate B (challenge passed this session) both hold. Correct credentials on an untrusted
-  account grant nothing.
+- **FR-02** Account-specific information (balance, contract year, allowance, quotes) is given only to a customer
+  who logged in (upstream authentication) on a trusted account (Gate A), in a session that is not locked. Moving
+  money also needs Gate B, the step-up check, passed this session (owner decision 2026-11-10, ADR 0007). Correct
+  credentials on an untrusted account grant nothing.
 - **FR-03** On an untrusted account, the customer is told at the start that the account cannot be serviced
   here and how to contact SPR, and is never asked for credentials. "At the start" means in the desk's first
   reply, whatever the first turn asked (owner decision 2026-11-09, #82).
-- **FR-04** After 3 failed challenge attempts in a session, account-specific actions are locked for that
+- **FR-04** After 3 failed challenge (step-up) attempts in a session, account-specific actions are locked for that
   session and a case is created.
 
 ### Quotes

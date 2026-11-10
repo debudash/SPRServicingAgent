@@ -9,6 +9,12 @@ or removed ones.
 
 The one exception so far is 0.4.0 (owner decision, issue #80): `CasePacket.customer_id` became
 required, a tightening made before any case had been stored.
+
+0.6.0 (ADR 0007) adds the login and step-up ports beside the B2 ones, and makes one owner-approved
+change: the account-view rule *relaxes* to Gate A and (a login or Gate B), with the lock named
+(#107). Nothing that validated before is refused, except states no flow produces (#108).
+The next version tightens them (an account view needs a login, the step-up needs a login, `start`
+is for guests only) once the lanes comply (#102, #103), the same way 0.4.0 was made.
 """
 
-CONTRACTS_VERSION = "0.5.0"
+CONTRACTS_VERSION = "0.6.0"

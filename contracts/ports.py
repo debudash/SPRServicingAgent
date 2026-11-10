@@ -1,4 +1,5 @@
-"""The interfaces where lanes meet (contracts 0.2.0, issue #28; B2 ports 0.3.0, issue #56).
+"""The interfaces where lanes meet (contracts 0.2.0, issue #28; B2 ports 0.3.0, issue #56;
+B3 ports 0.5.0, issue #86; login ports 0.6.0, issue #100).
 
 Each lane implements or calls these Protocols and never imports another lane's modules:
 
@@ -10,16 +11,18 @@ Each lane implements or calls these Protocols and never imports another lane's m
 | `AccountStore` | data (`data/store/`) | agents (`intake`, the account node) |
 | `IdentityCheck` | data (`data/identity.py`) | agents (`identity_gate`) |
 | `CaseStore` | data (`data/store/`) | agents (the case node) |
-| `QuoteService` | data (`data/quote.py`) | agents (the Transaction node's `quote` tool) |
+| `QuoteService` | data (`data/store/quotes.py`) | agents (the Transaction node's `quote` tool) |
 | `ProposalStore` | data (`data/store/`) | agents (Transaction, confirm, approval edge) |
 | `ApprovalStore` | data (`data/store/`) | agents (the approval edge) |
 | `Ledger` | data (`data/store/`) | agents (the execute node) |
 | `PolicySource` | data (`data/knowledge_index/`) | agents (Compliance's `get_policy` tool) |
+| `PasswordCheck` | data (`data/identity.py`) | agents (the runner's `login`) |
+| `LoginDeskRunner` | agents (`agents/runner.py`) | quality (`evals/run.py`), the UI |
 """
 
 from datetime import date
 from enum import StrEnum
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic import AwareDatetime, Field, JsonValue
 
@@ -279,6 +282,8 @@ class TurnResult(Message):
     usage: Usage = Usage()
     latency_ms: int = Field(default=0, ge=0)
     provider_error: bool = False  # True means the eval verdict is `na`, not `fail`
+    # ADR 0007 (0.6.0): show the masked step-up form. Its values go to `step_up`, never to `send`.
+    step_up_required: bool = False
 
 
 class DeskRunner(Protocol):
@@ -293,4 +298,38 @@ class DeskRunner(Protocol):
 
     def send(self, conversation_id: str, text: str) -> TurnResult:
         """Run one customer turn to completion."""
+        ...
+
+
+# ---------- login and the step-up (ADR 0007; 0.6.0) ----------
+class PasswordCheck(Protocol):
+    def check_password(self, customer_id: str, password: str) -> bool:
+        """The simulated upstream login. True only for the customer's own password, compared in
+        constant time; an unknown customer is False and takes as long. The stored hash never
+        leaves the call (PG-04)."""
+        ...
+
+
+class LoginRefused(Message):
+    """A refused login. One reason only, so the login page never says whether the customer
+    exists or the password was wrong."""
+
+    reason: Literal["invalid_credentials"] = "invalid_credentials"
+
+
+class LoginDeskRunner(DeskRunner, Protocol):
+    """`DeskRunner` with the login and the step-up. The next version folds these into
+    `DeskRunner`, once the runner and the eval harness implement them (#102, #103)."""
+
+    def login(self, customer_id: str, password: str) -> str | LoginRefused:
+        """Check the password (`PasswordCheck`), then open a conversation bound to the customer,
+        with `authenticated` and Gate A written by intake, their only writer. Returns the
+        conversation ID."""
+        ...
+
+    def step_up(self, conversation_id: str, dob: date, last4: str) -> TurnResult:
+        """The step-up form's values, straight to the identity gate: never turn text, never in
+        the transcript, trace or audit. Runs as a turn (pass, fail or lock), then continues the
+        confirmed proposal that asked for it (`state.step_up_pending`). With no step-up pending
+        it counts no attempt and returns NOT_PERMITTED."""
         ...

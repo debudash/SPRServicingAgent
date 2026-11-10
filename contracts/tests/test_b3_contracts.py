@@ -7,7 +7,6 @@ from itertools import pairwise
 import pytest
 from pydantic import JsonValue, ValidationError
 
-from contracts import CONTRACTS_VERSION
 from contracts.messages import (
     DECISION_MOVES,
     PROPOSAL_TRANSITIONS,
@@ -62,10 +61,6 @@ def _proposal() -> Proposal:
         quoted_turn=1,
         hash=proposal_hash("SPR-1001", QUOTE, AS_OF),
     )
-
-
-def test_version_is_0_5_0() -> None:
-    assert CONTRACTS_VERSION == "0.5.0"
 
 
 # ---------- FR-07: a refused quote says why ----------
