@@ -16,7 +16,13 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 
 from agents.llm import build_messages
 from agents.nodes import case
-from agents.nodes.common import Deps, NodeFn, invoke_structured, session_context
+from agents.nodes.common import (
+    BudgetExceeded,
+    Deps,
+    NodeFn,
+    invoke_structured,
+    session_context,
+)
 from agents.prompts import load
 from contracts.messages import ComplianceDecision, Decision, Proposal, Reason, Signal
 from contracts.money import format_dollars
@@ -118,6 +124,10 @@ def make(deps: Deps) -> NodeFn:
             return {}
         try:
             deps.turn.spend_tool_call()
+        except BudgetExceeded:  # D-10: a budget stop, reported as one
+            deps.turn.failure = "budget"
+            return {}
+        try:
             deps.turn.record(Node.COMPLIANCE, Step.GET_POLICY)
             chunks = list(
                 deps.registry.call(
@@ -155,11 +165,6 @@ def make(deps: Deps) -> NodeFn:
         flagged = state.rule_flags is not None and bool(state.rule_flags.flags)
         if flagged and decision.decision is Decision.APPROVE:  # FR-11: never on a flagged proposal
             decision = decision.model_copy(update={"decision": Decision.ESCALATE})
-        deps.turn.policy_versions = {
-            refs[r.policy_ref].doc_id: refs[r.policy_ref].version
-            for r in decision.reasons
-            if r.policy_ref in refs
-        }
         policy_refs: list[JsonValue] = [r.policy_ref for r in decision.reasons]
         signals: list[JsonValue] = [s.value for s in sorted(decision.signals)]
         deps.audit.append(

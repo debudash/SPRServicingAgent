@@ -104,7 +104,11 @@ def make(deps: Deps) -> NodeFn:
                 "quote": proposal.quote,
                 "proposal_id": proposal.proposal_id,
                 "rule_flags": state.rule_flags.flags if state.rule_flags else frozenset(),
-                "compliance_reasons": decision.reasons if decision else (),
+                # FR-23: the model's free text is scrubbed like the excerpt.
+                "compliance_reasons": tuple(
+                    r.model_copy(update={"text": scrub(r.text, state.as_of)})
+                    for r in (decision.reasons if decision else ())
+                ),
                 "compliance_decision": decision.decision if decision else None,
                 "signals": decision.signals if decision else frozenset(),
             }

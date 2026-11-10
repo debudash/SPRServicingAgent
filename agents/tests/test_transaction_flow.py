@@ -172,7 +172,7 @@ def test_an_explicit_yes_on_a_later_turn_confirms_and_asks_for_the_step_up(
     assert "identity check" in r.reply_text
     assert AuditEvent.CONFIRMED in desk.events()
     passed = desk.step_up(*MARGARET)
-    assert passed.steps[0] is Step.VERIFY_IDENTITY
+    assert passed.steps == (Step.VERIFY_IDENTITY, Step.CREATE_CASE)
     assert not passed.step_up_required
     # #89: no money path is wired here, so the kill switch reads off: a person decides (FR-26).
     assert passed.outcome is Outcome.NEEDS_HUMAN

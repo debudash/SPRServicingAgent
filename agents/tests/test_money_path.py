@@ -6,9 +6,11 @@ ledger are the real ones. Each FR-08 precondition is removed one at a time and t
 executions must be zero (M-01).
 """
 
+import json
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import date
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -28,6 +30,7 @@ from contracts.messages import (
 )
 from contracts.outcomes import Outcome
 from contracts.ports import AuditEvent, KnowledgeChunk, TurnResult
+from contracts.tokens import approval_token
 from contracts.tools import Node, Role, Step
 
 from .test_graph import FakeSearch, MemoryAudit
@@ -374,3 +377,27 @@ def test_issue_137_compliance_cannot_approve_a_flagged_proposal(tmp_path: Path) 
     assert AuditEvent.TOKEN_ISSUED not in desk.events()
     packet = desk.runner._states[desk.conv].case_packet
     assert packet is not None and packet.compliance_decision is Decision.ESCALATE
+
+
+def test_a_refused_execution_moves_nothing_and_goes_to_a_person(tmp_path: Path) -> None:
+    # Review on PR #135: the ledger refusing (here, a token under another secret) left the
+    # proposal approved with an unused token.
+    desk = Desk(tmp_path, [withdraw(5_000), confirm(5_000)], [review()]).login()
+    money = desk.stores.money
+    assert money is not None
+    forged = replace(money, issue_token=partial(approval_token, secret=b"another-secret"))
+    desk.runner._stores = replace(desk.stores, money=forged)
+    desk.say("Withdraw $5,000.")
+    desk.say("Yes, go ahead with $5,000.")
+    r = desk.step_up()
+    assert r.outcome is Outcome.UNAVAILABLE and desk.executions() == 0
+    assert desk.status() is ProposalStatus.ESCALATED
+
+
+def test_the_executed_row_records_the_policy_versions_cited(tmp_path: Path) -> None:
+    desk = Desk(tmp_path, [withdraw(5_000), confirm(5_000)], [review()]).login()
+    desk.say("Withdraw $5,000.")
+    desk.say("Yes, go ahead with $5,000.")
+    assert desk.step_up().outcome is Outcome.EXECUTED
+    row = desk.conn.execute("SELECT versions FROM audit WHERE event = 'executed'").fetchone()
+    assert json.loads(row[0])["documents"] == {"large_withdrawal_policy": 1}  # FR-10

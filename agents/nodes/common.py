@@ -82,8 +82,6 @@ class TurnContext:
     # proposal (FR-07), and the account it was quoted against gives the reply its balance.
     quote_refusal: QuoteRefusalReason | None = None
     quote_basis: AccountView | None = None
-    # #89: the policy versions Compliance cited, for the executed row's audit (FR-10).
-    policy_versions: dict[str, int] = field(default_factory=dict)
 
     def record(self, node: Node, step: Step) -> None:
         self.steps.append(step)

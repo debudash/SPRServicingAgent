@@ -15,6 +15,7 @@ from contracts.messages import (
     AccountStatus,
     AgeBand,
     CaseReason,
+    Quote,
     RuleFlag,
     RuleFlags,
     ThresholdTier,
@@ -27,12 +28,9 @@ LARGE_AMOUNT_CENTS = 2_500_000  # D-02: over $25,000
 
 
 def flags_for(
-    state: ConversationState, view_status: AccountStatus, balance: int, age: AgeBand
+    quote: Quote, execution_enabled: bool, view_status: AccountStatus, balance: int, age: AgeBand
 ) -> set[RuleFlag]:
-    """The flags for the state's proposal against the account as it is now."""
-    proposal = state.proposal
-    assert proposal is not None
-    quote = proposal.quote
+    """The flags for a quote against the account as it is now."""
     flags: set[RuleFlag] = set()
     if quote.amount_cents > LARGE_AMOUNT_CENTS:
         flags.add(RuleFlag.OVER_AMOUNT)
@@ -40,12 +38,13 @@ def flags_for(
     if quote.amount_cents * 2 > balance:
         flags.add(RuleFlag.OVER_SHARE)
     if quote.threshold_tier is ThresholdTier.HUMAN and not flags:
+        # Human tier at quote time but under $25,000: it was the share of the balance then.
         flags.add(RuleFlag.OVER_SHARE)
     if view_status is not AccountStatus.ACTIVE:
         flags.add(RuleFlag.NOT_ACTIVE)
     if age is AgeBand.EIGHTY_PLUS and quote.excess_cents > 0:
         flags.add(RuleFlag.AGE_80_OVER_ALLOWANCE)
-    if not state.switches.execution_enabled:
+    if not execution_enabled:
         flags.add(RuleFlag.EXECUTION_DISABLED)
     return flags
 
@@ -65,7 +64,13 @@ def make(deps: Deps) -> NodeFn:
         if proposal is None or customer_id is None:
             return {}
         view = deps.accounts.view(customer_id, state.as_of)
-        flags = flags_for(state, view.account_status, view.balance_cents, view.age_band)
+        flags = flags_for(
+            proposal.quote,
+            state.switches.execution_enabled,
+            view.account_status,
+            view.balance_cents,
+            view.age_band,
+        )
         # Issue #136: a hold or escalation sent one proposal to a person, and the next proposal
         # in the same session started clean, so asking again (or for a smaller part) executed.
         # The audit log is the durable record of the cases this conversation opened: once a
