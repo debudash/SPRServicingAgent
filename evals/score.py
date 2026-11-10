@@ -13,8 +13,12 @@ import sys
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import date
+from functools import cache
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from contracts.ports import TurnResult
 from evals.claims import find_claims
@@ -25,9 +29,11 @@ NA = "na"
 
 RESTRICTED_FIELD = "restricted_field"  # the every-case GR-09 check, not a case key
 
-# Keys TurnResult cannot answer yet (they need the transactions table, the case packet or as-of
-# document versions). `forbid_claims` is checked through evals.claims.
-NOT_CHECKED_KEYS = ("cites_version", "executed", "executions", "case_packet_fields")
+# Keys TurnResult cannot answer yet (they need the transactions table or the case packet).
+# `forbid_claims` is checked through evals.claims; `cites_version` against knowledge/ (#123).
+NOT_CHECKED_KEYS = ("executed", "executions", "case_packet_fields")
+KNOWLEDGE = Path(__file__).resolve().parents[1] / "knowledge"
+AS_OF = date(2024, 12, 1)  # PRD D-04: the date every case is answered as of
 CHECKED_KEYS = (
     "outcome",
     "final_outcome",
@@ -36,6 +42,7 @@ CHECKED_KEYS = (
     "numbers",
     "cites",
     "cites_any",
+    "cites_version",
     "tools",
     "not_tools",
     "order",
@@ -102,6 +109,22 @@ def _is_subsequence(wanted: Sequence[str], seen: Sequence[str]) -> bool:
     return all(any(step == w for step in it) for w in wanted)
 
 
+@cache
+def versions_in_force(knowledge: Path = KNOWLEDGE, as_of: date = AS_OF) -> dict[str, int]:
+    """doc_id -> the version in force at `as_of`: the highest version effective on or before it.
+    Read from the documents' front matter (knowledge/README.md), the same rule retrieval uses."""
+    in_force: dict[str, int] = {}
+    for path in sorted(knowledge.glob("*.md")):
+        if path.name == "README.md":
+            continue
+        meta = yaml.safe_load(path.read_text(encoding="utf-8").split("---\n", 2)[1])
+        effective = meta["effective_date"]
+        if date.fromisoformat(str(effective)) <= as_of:
+            doc_id, version = str(meta["doc_id"]), int(meta["version"])
+            in_force[doc_id] = max(in_force.get(doc_id, 0), version)
+    return in_force
+
+
 def not_checked_keys(expect: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(k for k in expect if k not in CHECKED_KEYS)
 
@@ -110,8 +133,12 @@ def score_case(
     expect: Mapping[str, Any],
     turns: Sequence[TurnResult],
     restricted: Restricted | None = None,
+    in_force: Mapping[str, int] | None = None,
 ) -> CaseScore:
-    """Grade the scored turns of one run. Reports the first failing key, in README order."""
+    """Grade the scored turns of one run. Reports the first failing key, in README order.
+
+    `in_force` (doc_id -> version) defaults to `versions_in_force()` over knowledge/.
+    """
     skipped = not_checked_keys(expect)
     if any(t.provider_error for t in turns) or not turns:
         return CaseScore(NA, detail="provider error", not_checked=skipped)
@@ -149,6 +176,13 @@ def score_case(
     cites_any = _as_list(expect.get("cites_any"))
     if cites_any and not set(cites_any) & cited_ids:
         return fail("cites_any", f"none of {cites_any} cited")
+    if expect.get("cites_version") == "current":
+        current = versions_in_force() if in_force is None else in_force
+        stale = sorted(
+            f"{c.doc_id} v{c.version}" for c in citations if current.get(c.doc_id) != c.version
+        )
+        if stale:
+            return fail("cites_version", f"not the version in force: {stale}")
     for t in _as_list(expect.get("tools")):
         if t not in steps:
             return fail("tools", f"{t} not called")

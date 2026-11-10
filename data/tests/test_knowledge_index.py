@@ -5,6 +5,7 @@ from pathlib import Path
 
 from data.knowledge_index.index import ChromaKnowledgeSearch
 from data.knowledge_index.loader import load_chunks
+from data.settings import DEFAULT_AS_OF
 
 REPO = Path(__file__).resolve().parents[2]
 DIM = 256
@@ -63,7 +64,7 @@ def test_real_knowledge_answers_only_from_versions_in_force(tmp_path: Path) -> N
     """At the as-of date every chunk returned is the version in force for its document, however
     many superseded versions knowledge/ keeps (GR-04, #123)."""
     chunks = load_chunks(REPO / "knowledge")
-    as_of = date(2024, 12, 1)  # PRD D-04
+    as_of = date.fromisoformat(DEFAULT_AS_OF)  # PRD D-04
     in_force: dict[str, int] = {}
     for c in chunks:
         if c.effective_date <= as_of:
