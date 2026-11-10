@@ -68,7 +68,8 @@ def route_after_concierge(state: ConversationState, turn: TurnContext) -> str:
         return Node.RESPOND.value
     kind = state.intent.kind
     if kind is IntentKind.THIRD_PARTY:  # D-09: a case, before any identity question
-        return Node.CASE.value
+        # #82: no account bound means no case (case.reason_for); respond points to SPR.
+        return Node.CASE.value if case.reason_for(state) else Node.RESPOND.value
     if kind in (IntentKind.OTHER_ACCOUNT, IntentKind.RESTRICTED_INFO):  # NG-05, NG-08
         return Node.RESPOND.value
     # A complete set of credentials is a challenge attempt whatever the model called the turn:

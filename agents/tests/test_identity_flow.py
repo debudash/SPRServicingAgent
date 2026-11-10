@@ -69,11 +69,14 @@ class Desk:
         views: dict[str, AccountView] | None = None,
         drafts: tuple[KnowledgeDraft, ...] = (),
         cases: MemoryCases | None = None,
+        accounts: MemoryAccounts | None = None,
     ) -> None:
         self.search = FakeSearch([FEES])
         self.concierge = ScriptedChatModel([Intent(kind=k) for k in kinds])
         self.audit = MemoryAudit()
-        self.accounts = MemoryAccounts(views or VIEWS, trusted={"SPR-1001", "SPR-1003", "SPR-1004"})
+        self.accounts = accounts or MemoryAccounts(
+            views or VIEWS, trusted={"SPR-1001", "SPR-1003", "SPR-1004"}
+        )
         self.identity = MemoryIdentity(STORED)
         self.cases = cases or MemoryCases()
         self.runner = GraphDeskRunner(
@@ -392,3 +395,59 @@ def test_credentials_are_dropped_on_every_gate_path(session: Session) -> None:
     )
     identity_gate.make(deps)(state)
     assert turn.credentials is None and desk.identity.checks == 0
+
+
+# ---------- #82: FR-03 at the start, and no case without a customer (owner decisions) ----------
+def test_issue_82_untrusted_customer_is_told_on_the_first_turn() -> None:
+    desk = Desk(
+        IntentKind.PRODUCT_QUESTION,
+        IntentKind.PRODUCT_QUESTION,
+        drafts=(cited(FEES, "Year 5 is 3%."), cited(FEES, "Year 5 is 3%.")),
+    )
+    first, second = desk.talk("SPR-1002", "Is year 5 4%?", "And year 6?")
+    assert first.outcome is Outcome.ANSWERED and "3%" in first.reply_text
+    assert CONTACT in first.reply_text and "date of birth" not in first.reply_text.lower()
+    assert CONTACT not in second.reply_text  # told at the start, not on every turn
+
+
+def test_issue_82_g_b2_01_states_the_notice_once() -> None:
+    desk = Desk(IntentKind.ACCOUNT_INFO)
+    [r] = desk.talk("SPR-1002", "What's my current balance?")
+    assert r.outcome is Outcome.NOT_PERMITTED and r.reply_text.count(CONTACT) == 1
+
+
+def test_issue_82_trusted_customer_gets_no_notice() -> None:
+    desk = Desk(IntentKind.PRODUCT_QUESTION, drafts=(cited(FEES, "Year 5 is 3%."),))
+    [r] = desk.talk("SPR-1001", "Is year 5 4%?")
+    assert CONTACT not in r.reply_text
+
+
+def test_issue_82_anonymous_third_party_gets_no_case() -> None:
+    desk = Desk(IntentKind.THIRD_PARTY)
+    [r] = desk.talk(None, "I handle my mum's finances. What's her balance?")
+    assert r.outcome is Outcome.NOT_PERMITTED
+    assert Step.CREATE_CASE not in r.steps and desk.cases.opened == []
+    assert CONTACT in r.reply_text and r.reference is None
+
+
+# ---------- #84: the first-turn notice was lost when turn 1 failed ----------
+# Found by /code-review on PR #83 (spec). FR-03: told in the desk's first real reply.
+class FlakyAccounts(MemoryAccounts):
+    def __init__(self) -> None:
+        super().__init__(VIEWS, trusted={"SPR-1001"})
+        self.calls = 0
+
+    def gate_a(self, customer_id: str) -> bool:
+        self.calls += 1
+        if self.calls == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return super().gate_a(customer_id)
+
+
+def test_issue_84_notice_comes_on_the_first_real_reply_after_a_failed_turn() -> None:
+    drafts = (cited(FEES, "Year 5 is 3%."), cited(FEES, "Year 5 is 3%."))
+    desk = Desk(*[IntentKind.PRODUCT_QUESTION] * 3, drafts=drafts, accounts=FlakyAccounts())
+    failed, first_real, later = desk.talk("SPR-1002", "Is year 5 4%?", "Is year 5 4%?", "Year 6?")
+    assert failed.outcome is Outcome.UNAVAILABLE
+    assert first_real.outcome is Outcome.ANSWERED and CONTACT in first_real.reply_text
+    assert CONTACT not in later.reply_text
