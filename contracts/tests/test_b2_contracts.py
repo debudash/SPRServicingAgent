@@ -290,3 +290,10 @@ def test_a_withdrawal_review_carries_its_quote() -> None:
 def test_other_cases_need_no_proposal(reason: CaseReason) -> None:
     packet = _review_packet(None, proposal_id=None, reason=reason)
     assert packet.quote is None and packet.proposal_id is None
+
+
+def test_open_review_is_a_rule_flag() -> None:
+    # 0.6.1 (#136): a withdrawal already with a person sends later ones in the session to one too.
+    from contracts.messages import RuleFlag, RuleFlags
+
+    assert RuleFlags(proposal_id="P-1", flags=frozenset({RuleFlag.OPEN_REVIEW})).flags
