@@ -1,6 +1,5 @@
 """Issue #57: identity store split, starter-kit seed, account view and case store."""
 
-import re
 import sqlite3
 from datetime import date
 from pathlib import Path
@@ -14,6 +13,7 @@ from data.store.accounts import SqliteAccountStore
 from data.store.cases import SqliteCaseStore
 from data.store.db import open_db
 from data.store.seed import seed_starter_kit
+from data.tests.isolation import FORBIDDEN, violations
 
 AS_OF = date(2024, 12, 1)
 REPO = Path(__file__).resolve().parents[2]
@@ -181,24 +181,12 @@ def test_stores_conform_to_the_ports(conn: sqlite3.Connection) -> None:
 # Issue #66 (found by /code-review on PR #63): `dob` was not covered, so SQL reading the column
 # (or a comma join on identity) passed. `dob` is flagged only inside SQL (a line with a SQL
 # keyword before it), because the word is common in non-SQL code such as the credential masks.
-_FORBIDDEN = re.compile(
-    r"ssn_last4"
-    r"|\b(FROM|INTO|JOIN|UPDATE)\s+identity\b"
-    r"|\bFROM\s+\w+(\s+\w+)?\s*,\s*identity\b"
-    r"|\b(SELECT|WHERE|SET|INSERT|UPDATE)\b[^\n#]*\bdob\b",
-    re.IGNORECASE,
-)
-_ALLOWED = {REPO / "data" / "identity.py"}
+_FORBIDDEN = FORBIDDEN  # one scanner for every restricted table (issue #111)
 
 
 def test_only_data_identity_touches_the_identity_table() -> None:
-    scanned = 0
-    for lane in ("data", "agents"):
-        for path in (REPO / lane).rglob("*.py"):
-            if path in _ALLOWED or "tests" in path.parts:
-                continue
-            scanned += 1
-            assert not _FORBIDDEN.search(path.read_text(encoding="utf-8")), path
+    found, scanned = violations()
+    assert found == []
     assert scanned >= 15  # the scan found the lanes' modules, not an empty tree
 
 

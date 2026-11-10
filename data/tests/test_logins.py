@@ -1,7 +1,6 @@
 """Issue #101 (ADR 0007): the logins table, password hashes and the demo passwords."""
 
 import json
-import re
 import sqlite3
 from pathlib import Path
 
@@ -11,8 +10,7 @@ from contracts.ports import PasswordCheck
 from data.identity import SqliteIdentityCheck
 from data.store.db import open_db
 from data.store.seed import DEMO_LOGINS, seed_demo_logins, seed_starter_kit
-
-REPO = Path(__file__).resolve().parents[2]
+from data.tests.isolation import RESTRICTED, SCANNED_LANES, forbidden_sql, violations
 
 
 @pytest.fixture
@@ -90,18 +88,10 @@ def test_the_identity_check_never_shows_a_hash(conn: sqlite3.Connection) -> None
 
 
 # ---------- the logins table is reachable only through data/identity.py (PG-04, ADR 0007) ----
-_FORBIDDEN = re.compile(r"password_hash|\b(FROM|INTO|JOIN|UPDATE)\s+logins\b", re.IGNORECASE)
-_ALLOWED = {REPO / "data" / "identity.py"}
-
-
+# The scan itself is shared with the identity table (data/tests/isolation.py, issue #111).
 def test_only_data_identity_touches_the_logins_table() -> None:
-    scanned = 0
-    for lane in ("data", "agents"):
-        for path in (REPO / lane).rglob("*.py"):
-            if path in _ALLOWED or "tests" in path.parts:
-                continue
-            scanned += 1
-            assert not _FORBIDDEN.search(path.read_text(encoding="utf-8")), path
+    found, scanned = violations()
+    assert found == []
     assert scanned >= 15
 
 
@@ -109,4 +99,66 @@ def test_only_data_identity_touches_the_logins_table() -> None:
     "source", ['"SELECT password_hash FROM x"', '"INSERT INTO logins VALUES (?)"']
 )
 def test_the_logins_scan_catches_direct_sql(source: str) -> None:
-    assert _FORBIDDEN.search(source)
+    assert forbidden_sql(source)
+
+
+# ---------- #111: the isolation scans missed quoted, prefixed, joined and DDL forms ----------
+# Found by /code-review on PR #109 (both axes): PG-04 rests on these scans alone.
+
+_MISSED_FORMS = [
+    'FROM "{t}"',
+    "FROM `{t}`",
+    "FROM [{t}]",
+    "FROM main.{t}",
+    'FROM main."{t}"',
+    "SELECT * FROM accounts, {t}",
+    "SELECT * FROM accounts a, {t} i",
+    "DROP TABLE {t}",
+    "ALTER TABLE {t} ADD x",
+    "CREATE TABLE IF NOT EXISTS {t} (x)",
+    "PRAGMA table_info({t})",
+    "INSERT INTO {t} VALUES (?)",
+    "DELETE FROM {t}",
+    "x JOIN {t} ON 1",
+]
+
+
+@pytest.mark.parametrize("table", sorted(RESTRICTED))
+@pytest.mark.parametrize("form", _MISSED_FORMS)
+def test_issue_111_every_sql_form_naming_a_restricted_table_is_caught(
+    table: str, form: str
+) -> None:
+    assert forbidden_sql(form.format(t=table)), form.format(t=table)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        '"SELECT salt FROM x"',
+        '"SELECT dob FROM x"',
+        '"UPDATE x SET password_hash = ?"',
+        "ssn_last4",
+    ],
+)
+def test_issue_111_restricted_columns_are_caught(source: str) -> None:
+    assert forbidden_sql(source)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "accounts=SqliteAccountStore(conn, identity),",
+        "def f(conn, identity): ...",
+        "identity = SqliteIdentityCheck(conn)",
+        "# seed the demo logins once",
+        'DOB_MASK = "[DOB]"',
+        "salt = secrets.token_hex(16)",
+        "from data.identity import SqliteIdentityCheck",
+    ],
+)
+def test_issue_111_ordinary_python_is_not_flagged(source: str) -> None:
+    assert not forbidden_sql(source)
+
+
+def test_issue_111_every_python_lane_is_scanned() -> None:
+    assert {"data", "agents", "evals", "redteam"} <= set(SCANNED_LANES)
