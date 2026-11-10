@@ -32,3 +32,12 @@ Defects found in review are the evidence for workstream F (ADR 0002), so they al
 | #99 | 2026-11-09 | ProposalStore.move could set confirmed, approved or executed around their real paths | review on PR #96 (spec) | 99dad4b |
 | #107 | 2026-11-10 | A logged-in but locked session could hold an account view | review on PR #106 (spec) | 7da37b5 |
 | #108 | 2026-11-10 | The contract allowed a passed step-up on a locked session | review on PR #106 (spec) | bd585d8 |
+| #111 | 2026-11-10 | The restricted-table isolation scans missed quoted, prefixed, joined and DDL forms | review on PR #109 (both axes) | 275fea2 |
+| #112 | 2026-11-10 | check_password raised on a corrupt login row instead of refusing | review on PR #109 (spec) | 88a3c07 |
+| #114 | 2026-11-10 | Withdrawal amounts were masked as SSN digits for every logged-in customer | review on PR #113 (spec) | 569ee41 |
+| #115 | 2026-11-10 | A refused step-up kept the previous turn's gate, account view and case | review on PR #113 (spec) | e78bf27 |
+| #116 | 2026-11-10 | A malformed step-up counted as a failed identity attempt | review on PR #113 (both axes) | 426a42f |
+| #118 | 2026-11-10 | The rule-pinning self-test counted retired and pending golden cases | review on PR #117 (spec) | c697921 |
+| #120 | 2026-11-10 | The eval harness crashed the whole run when the desk asked a guest for a step-up | review on PR #119 (spec) | 4969e59 |
+| #121 | 2026-11-10 | Wrong step-up values scripted by an eval case were neither caught nor redacted | review on PR #119 (spec) | 0a3cf00 |
+| #126 | 2026-11-10 | The live desk answered as of today, not the as-of date (D-04) | review on PR #125 (spec) | f55ad32 |
