@@ -8,9 +8,14 @@ from datetime import date
 
 import pytest
 
+from agents.guards.credentials import Credentials
+from agents.nodes import identity_gate
+from agents.nodes.common import Deps, Stores, TurnContext
 from agents.nodes.knowledge import KnowledgeDraft
 from agents.runner import GraphDeskRunner
 from agents.testing import MemoryAccounts, MemoryCases, MemoryIdentity, ScriptedChatModel
+from agents.tools.registry import ToolRegistry
+from contracts import CONTRACTS_VERSION
 from contracts.messages import (
     AccountStatus,
     AccountView,
@@ -22,7 +27,7 @@ from contracts.messages import (
 )
 from contracts.outcomes import Outcome
 from contracts.ports import AuditEvent, TurnResult
-from contracts.state import GateResult, TraceEvent
+from contracts.state import ConversationState, GateResult, Session, TraceEvent, Versions
 from contracts.tools import Node, Role, Step
 
 from .test_graph import FEES, FakeSearch, MemoryAudit, cited
@@ -63,21 +68,20 @@ class Desk:
         *kinds: IntentKind,
         views: dict[str, AccountView] | None = None,
         drafts: tuple[KnowledgeDraft, ...] = (),
+        cases: MemoryCases | None = None,
     ) -> None:
         self.search = FakeSearch([FEES])
         self.concierge = ScriptedChatModel([Intent(kind=k) for k in kinds])
         self.audit = MemoryAudit()
         self.accounts = MemoryAccounts(views or VIEWS, trusted={"SPR-1001", "SPR-1003", "SPR-1004"})
         self.identity = MemoryIdentity(STORED)
-        self.cases = MemoryCases()
+        self.cases = cases or MemoryCases()
         self.runner = GraphDeskRunner(
             search=self.search,
             audit=self.audit,
             models={Role.CONCIERGE: self.concierge, Role.KNOWLEDGE: ScriptedChatModel(drafts)},
             clock=lambda: AS_OF,
-            accounts=self.accounts,
-            identity=self.identity,
-            cases=self.cases,
+            stores=Stores(accounts=self.accounts, identity=self.identity, cases=self.cases),
         )
 
     def talk(self, customer: str | None, *texts: str) -> list[TurnResult]:
@@ -273,11 +277,10 @@ def test_gate_result_is_recorded_with_its_session() -> None:
     assert state.gate is GateResult.PASSED and state.session.gate_b_passed
 
 
-@pytest.mark.parametrize("wrong", ["SPR-1004"])
-def test_a_state_validation_error_fails_closed_as_a_contract_violation(wrong: str) -> None:
+def test_a_state_validation_error_fails_closed_as_a_contract_violation() -> None:
     # A store bug that hands back another customer's view must not reach the customer: the
     # state refuses it (NG-05) and the turn ends UNAVAILABLE, not as a provider error.
-    desk = Desk(IntentKind.VERIFY, views={**VIEWS, "SPR-1001": VIEWS[wrong]})
+    desk = Desk(IntentKind.VERIFY, views={**VIEWS, "SPR-1001": VIEWS["SPR-1004"]})
     [r] = desk.talk("SPR-1001", VERIFY_TEXT)
     assert r.outcome is Outcome.UNAVAILABLE
     assert not r.provider_error
@@ -292,9 +295,7 @@ class BrokenCases(MemoryCases):
 
 
 def test_issue_73_lock_holds_when_the_case_store_fails() -> None:
-    desk = Desk(*[IntentKind.VERIFY] * 4)
-    desk.cases = BrokenCases()
-    desk.runner._cases = desk.cases
+    desk = Desk(*[IntentKind.VERIFY] * 4, cases=BrokenCases())
     turns = desk.talk(
         "SPR-1001",
         "1960-01-01 and 1111",
@@ -351,3 +352,43 @@ def test_issue_74_a_failed_challenge_is_still_reported_on_a_product_turn() -> No
     [r] = desk.talk("SPR-1001", "DOB 1958-03-15, SSN last four 7832. Is year 5 4%?")
     assert desk.runner._states[desk.conv].session.failed_attempts == 1
     assert "don't match" in r.reply_text and "3%" in r.reply_text
+
+
+# ---------- review follow-ups on PR #72 ----------
+def test_the_lock_case_excerpt_covers_the_conversation_masked() -> None:
+    desk = Desk(*[IntentKind.VERIFY] * 3)
+    desk.talk("SPR-1001", "1960-01-01 and 1111", "1958-03-15 and 7832", "1958-03-14 and 0000")
+    [packet] = desk.cases.opened
+    assert packet.excerpt.count("[DOB]") == 3 and packet.excerpt.count("[SSN-4]") == 3
+
+
+@pytest.mark.parametrize(
+    "session",
+    [
+        Session(customer_id="SPR-1002"),  # untrusted
+        Session(customer_id="SPR-1001", gate_a_trusted=True, failed_attempts=3, locked=True),
+        Session(customer_id="SPR-1001", gate_a_trusted=True, gate_b_passed=True),
+    ],
+)
+def test_credentials_are_dropped_on_every_gate_path(session: Session) -> None:
+    turn = TurnContext(credentials=Credentials(dob=date(1958, 3, 14), last4="7823"))
+    desk = Desk()
+    deps = Deps(
+        audit=desk.audit,
+        registry=ToolRegistry(),
+        models={},
+        model_names={},
+        clock=lambda: AS_OF,
+        turn=turn,
+        accounts=desk.accounts,
+        identity=desk.identity,
+        cases=desk.cases,
+    )
+    state = ConversationState(
+        conversation_id="CV1",
+        as_of=AS_OF,
+        session=session,
+        versions=Versions(contracts=CONTRACTS_VERSION),
+    )
+    identity_gate.make(deps)(state)
+    assert turn.credentials is None and desk.identity.checks == 0

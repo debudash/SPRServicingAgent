@@ -1,7 +1,7 @@
 """case (code for B2): opens a case for a human (FR-04, FR-16, D-08, D-09).
 
-The packet's free text is the already-masked turn, scrubbed a second time (ADR 0005), and fixed
-wording; no model writes any of it in B2.
+The packet's free text is the conversation's already-masked customer turns, scrubbed a second
+time (ADR 0005), and fixed wording; no model writes any of it in B2.
 """
 
 import logging
@@ -9,13 +9,22 @@ import uuid
 from typing import Any
 
 from agents.guards.credentials import scrub
-from agents.nodes.common import Deps, NodeFn, latest_customer_text
+from agents.nodes.common import Deps, NodeFn
 from contracts.messages import CasePacket, CaseReason, IntentKind
 from contracts.ports import AuditEvent
 from contracts.state import ConversationState, GateResult
 from contracts.tools import Node, Step
 
 logger = logging.getLogger(__name__)
+
+EXCERPT_TURNS = 5
+
+
+def excerpt(state: ConversationState) -> str:
+    """FR-16: the conversation's last customer turns, already masked, scrubbed once more."""
+    said = [e.text for e in state.transcript if e.role == "customer"][-EXCERPT_TURNS:]
+    return scrub(" | ".join(said), state.as_of)
+
 
 _WHY: dict[CaseReason, tuple[str, str]] = {
     CaseReason.LOCKED: (
@@ -50,7 +59,7 @@ def make(deps: Deps) -> NodeFn:
             opened_for=reason,
             request_summary=summary,
             quote=None,
-            excerpt=scrub(latest_customer_text(state), state.as_of),
+            excerpt=excerpt(state),
             recommendation=recommendation,
         )
         deps.turn.record(Node.CASE, Step.CREATE_CASE)

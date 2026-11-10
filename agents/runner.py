@@ -16,20 +16,12 @@ from pydantic import ValidationError
 from agents.graph import build_graph
 from agents.guards.credentials import capture
 from agents.llm import chat_model, load_model_map
-from agents.nodes.common import Deps, TurnContext
+from agents.nodes.common import Deps, Stores, TurnContext
 from agents.nodes.respond import UNAVAILABLE_TEXT
 from agents.tools.registry import ToolRegistry
 from contracts import CONTRACTS_VERSION
 from contracts.outcomes import Outcome
-from contracts.ports import (
-    AccountStore,
-    AuditEvent,
-    AuditLog,
-    CaseStore,
-    IdentityCheck,
-    KnowledgeSearch,
-    TurnResult,
-)
+from contracts.ports import AuditEvent, AuditLog, KnowledgeSearch, TurnResult
 from contracts.state import (
     Budgets,
     ContractViolation,
@@ -54,14 +46,10 @@ class GraphDeskRunner:
         models: Mapping[Role, BaseChatModel] | None = None,
         clock: Callable[[], date] = date.today,
         *,
-        accounts: AccountStore,
-        identity: IdentityCheck,
-        cases: CaseStore,
+        stores: Stores,
     ) -> None:
         self._audit = audit
-        self._accounts = accounts
-        self._identity = identity
-        self._cases = cases
+        self._stores = stores
         self._clock = clock
         spec = load_model_map()
         self._model_names = {role: spec[role].model for role in spec}
@@ -105,9 +93,9 @@ class GraphDeskRunner:
             model_names=self._model_names,
             clock=self._clock,
             turn=ctx,
-            accounts=self._accounts,
-            identity=self._identity,
-            cases=self._cases,
+            accounts=self._stores.accounts,
+            identity=self._stores.identity,
+            cases=self._stores.cases,
         )
         # A fresh turn: per-turn results cleared, the runner's own fields advanced.
         state = prior.model_copy(

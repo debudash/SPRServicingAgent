@@ -7,7 +7,7 @@ import pytest
 
 from agents.graph import apply_writes
 from agents.nodes import concierge as concierge_node
-from agents.nodes.common import TurnContext
+from agents.nodes.common import Stores, TurnContext
 from agents.nodes.knowledge import KnowledgeDraft
 from agents.runner import GraphDeskRunner
 from agents.testing import MemoryAccounts, MemoryCases, MemoryIdentity, ScriptedChatModel
@@ -72,13 +72,11 @@ class MemoryAudit:
         return True
 
 
-def no_accounts() -> dict[str, Any]:
+def no_accounts() -> Stores:
     """B2 stores with no accounts in them, for runs that never reach an account."""
-    return {
-        "accounts": MemoryAccounts({}, trusted=set()),
-        "identity": MemoryIdentity({}),
-        "cases": MemoryCases(),
-    }
+    return Stores(
+        accounts=MemoryAccounts({}, trusted=set()), identity=MemoryIdentity({}), cases=MemoryCases()
+    )
 
 
 def make_runner(
@@ -94,7 +92,7 @@ def make_runner(
         audit,
         models={Role.CONCIERGE: concierge, Role.KNOWLEDGE: knowledge},
         clock=lambda: AS_OF,
-        **no_accounts(),
+        stores=no_accounts(),
     )
     return runner, search, audit
 

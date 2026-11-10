@@ -27,6 +27,9 @@ def make(deps: Deps) -> NodeFn:
 
     def identity_gate(state: ConversationState) -> dict[str, Any]:
         s = state.session
+        # Used at most once, then dropped on every path (review on PR #72: only the challenge
+        # path dropped them).
+        creds, deps.turn.credentials = deps.turn.credentials, None
         if s.customer_id is None:
             return {"gate": GateResult.NO_CUSTOMER}
         if not s.gate_a_trusted:  # GR-14: refuse, never ask
@@ -37,7 +40,6 @@ def make(deps: Deps) -> NodeFn:
         if s.gate_b_passed:
             return {"gate": GateResult.VERIFIED}
 
-        creds, deps.turn.credentials = deps.turn.credentials, None  # used once, then dropped
         if creds is None or creds.dob is None or creds.last4 is None:
             return {"gate": GateResult.ASK}  # ADR 0005: nothing usable is not an attempt
 

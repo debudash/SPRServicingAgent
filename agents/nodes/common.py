@@ -67,6 +67,16 @@ class TurnContext:
         )
 
 
+@dataclass(frozen=True)
+class Stores:
+    """The B2 records the desk reads and writes: accounts (Gate A, views), the identity check
+    (Gate B) and cases. Built together by the wiring, passed together to the runner."""
+
+    accounts: AccountStore
+    identity: IdentityCheck
+    cases: CaseStore
+
+
 @dataclass
 class Deps:
     audit: AuditLog

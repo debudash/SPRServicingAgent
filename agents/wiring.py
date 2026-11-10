@@ -7,10 +7,10 @@ import json
 import os
 import sqlite3
 from pathlib import Path
-from typing import Any
 
 from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
 
+from agents.nodes.common import Stores
 from agents.runner import GraphDeskRunner
 from contracts.ports import DeskRunner
 from data.identity import SqliteIdentityCheck
@@ -50,15 +50,15 @@ def build_runner() -> DeskRunner:
     settings.var_dir.mkdir(parents=True, exist_ok=True)
     search = ChromaKnowledgeSearch(settings.chroma_dir, DefaultEmbeddingFunction())  # ADR 0006
     conn = open_desk_db(settings.desk_db)
-    return GraphDeskRunner(search=search, audit=SqliteAuditLog(conn), **build_stores(conn))
+    return GraphDeskRunner(search=search, audit=SqliteAuditLog(conn), stores=build_stores(conn))
 
 
-def build_stores(conn: sqlite3.Connection) -> dict[str, Any]:
+def build_stores(conn: sqlite3.Connection) -> Stores:
     """The B2 stores over a migrated desk database, seeded from the starter kit (idempotent)."""
     seed_starter_kit(conn)
     identity = SqliteIdentityCheck(conn)
-    return {
-        "accounts": SqliteAccountStore(conn, identity),
-        "identity": identity,
-        "cases": SqliteCaseStore(conn),
-    }
+    return Stores(
+        accounts=SqliteAccountStore(conn, identity),
+        identity=identity,
+        cases=SqliteCaseStore(conn),
+    )

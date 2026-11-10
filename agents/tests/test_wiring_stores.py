@@ -22,7 +22,7 @@ def _runner(tmp_path: Path, *kinds: IntentKind) -> GraphDeskRunner:
             Role.KNOWLEDGE: ScriptedChatModel(),
         },
         clock=lambda: date(2024, 12, 1),
-        **build_stores(open_desk_db(tmp_path / "desk.db")),
+        stores=build_stores(open_desk_db(tmp_path / "desk.db")),
     )
 
 
