@@ -372,7 +372,10 @@ cases:
     assert (rec["verdict"], rec["failed_key"]) == (FAIL, "restricted_field")
     out_json, out_md = run_mod.write_results(res, tmp_path / "out")
     for path in (out_json, out_md):
-        text = path.read_text()
+        # Issue #147 (found by make check on 2026-11-11): the run ID is a UTC timestamp, so on a
+        # date or time containing 1111 this failed with nothing leaked. The run ID is not case
+        # data; the check covers everything else in the file.
+        text = path.read_text().replace(res["run_id"], "<run_id>")
         assert "1960-01-01" not in text
         assert "1111" not in text
 

@@ -42,7 +42,7 @@ from contracts.tools import Node, Role, ToolName
 
 logger = logging.getLogger(__name__)
 
-_MODEL_ROLES = (Role.CONCIERGE, Role.KNOWLEDGE)
+_MODEL_ROLES = (Role.CONCIERGE, Role.KNOWLEDGE, Role.COMPLIANCE)
 # What the transcript keeps of a step-up: that the form was used, never its values (ADR 0007).
 STEP_UP_ENTRY = "[identity check submitted]"
 _LAST4 = re.compile(r"\d{4}")
@@ -85,6 +85,11 @@ def _fresh_turn(
             "gate": None,
             "account_view": None,
             "case_packet": None,
+            # #89: the money path's results are this turn's, like the gate's.
+            "rule_flags": None,
+            "compliance": None,
+            "approval": None,
+            "execution": None,
             "knowledge_answer": None,
             "reply": None,
             "transcript": [
@@ -119,6 +124,8 @@ class GraphDeskRunner:
         self._registry.register(ToolName.GET_ACCOUNT, stores.accounts.view)
         self._registry.register(ToolName.QUOTE, stores.quotes.quote)
         self._registry.register(ToolName.PROPOSE, stores.proposals.save)
+        if stores.money is not None:  # #89: Compliance's one tool
+            self._registry.register(ToolName.GET_POLICY, stores.money.policy.get_policy)
         self._states: dict[str, ConversationState] = {}
         self._turns_taken: dict[str, int] = {}
 
@@ -212,6 +219,7 @@ class GraphDeskRunner:
             identity=self._stores.identity,
             cases=self._stores.cases,
             proposals=self._stores.proposals,
+            money=self._stores.money,
         )
         state = _fresh_turn(prior, turn_no, started, text)
 
