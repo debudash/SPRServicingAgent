@@ -139,6 +139,11 @@ class AgentReviewDesk:
         except ValueError as refused:  # never confirmed (GR-17), or no approval secret
             logger.warning("reviewer approval refused: %s", refused)
             return self._not_done(packet, decision, str(refused))
+        # Issue #153 (found by /code-review on PR #150): the decision was audited only at the end of
+        # the happy path, after the ledger's executed row, and a refused one not at all. It is
+        # audited here, when recorded and before the ledger (ARCHITECTURE 3.4); _not_done audits
+        # every refusal with its reason.
+        self._log(packet, decision, {"proposal_id": pid, "approval_id": approval.approval_id})
         cited: dict[str, JsonValue] = dict(versions_cited(packet.compliance_reasons))
         versions: dict[str, JsonValue] = {
             "contracts": CONTRACTS_VERSION,
@@ -154,7 +159,6 @@ class AgentReviewDesk:
                 self._proposals.move(pid, ProposalStatus.ESCALATED)
             return self._not_done(packet, decision, f"the ledger refused it ({refused})")
         self._cases.decide(decision)
-        self._log(packet, decision, {"proposal_id": pid, "transaction_id": done.transaction_id})
         return ReviewResult(
             case_id=packet.case_id,
             decision=Decision.APPROVE,
@@ -209,7 +213,8 @@ class AgentReviewDesk:
 
     # ---------- helpers ----------
     def _not_done(self, packet: CasePacket, decision: HumanDecision, why: str) -> ReviewResult:
-        """The decision could not take effect: the case stays as it was."""
+        """The decision could not take effect: the case stays as it was, and the audit says why."""
+        self._log(packet, decision, {"refused": why})
         return ReviewResult(
             case_id=packet.case_id,
             decision=decision.decision,

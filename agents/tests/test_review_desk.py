@@ -27,6 +27,7 @@ from contracts.messages import (
 from contracts.outcomes import Outcome
 from contracts.ports import AuditEvent, KnowledgeChunk, ReviewDesk
 from contracts.tools import Step
+from data.store.audit import SqliteAuditLog
 from data.store.cases import SqliteCaseStore
 
 from .test_money_path import AS_OF, Desk, confirm, review, withdraw
@@ -257,3 +258,27 @@ def test_issue_154_a_case_pointing_at_another_customers_withdrawal_is_refused(
     assert result.outcome is Outcome.NOT_PERMITTED and "does not belong" in result.text
     assert desk.executions() == 0 and desk.status() is ProposalStatus.ESCALATED
     assert store.status("CASE-FORGED") is CaseStatus.OPEN
+
+
+def _audit_rows(desk: Desk) -> list[tuple[str, dict[str, object]]]:
+    rows = desk.conn.execute("SELECT event, payload FROM audit ORDER BY audit_id").fetchall()
+    return [(e, json.loads(p)) for e, p in rows]
+
+
+@pytest.mark.parametrize("enabled", [True, False], ids=["executed", "kill switch"])
+def test_issue_153_every_reviewer_decision_is_audited_before_the_ledger(
+    tmp_path: Path, enabled: bool
+) -> None:
+    # Issue #153, found by /code-review on PR #150: a refused approval left no human_decided row,
+    # and a successful one wrote it after the ledger's executed row (ARCHITECTURE 3.4).
+    desk, case_id = large_withdrawal_with_a_person(tmp_path)
+    desk_review = reviewer(desk, enabled=enabled)
+    desk_review._audit = SqliteAuditLog(desk.conn)  # the ledger's log, to compare the order
+    desk_review.decide(decide(case_id, Decision.APPROVE))
+    events = [e for e, _ in _audit_rows(desk)]
+    assert "human_decided" in events
+    if enabled:
+        assert events.index("human_decided") < events.index("executed")
+    else:
+        refused = [p for e, p in _audit_rows(desk) if e == "human_decided" and "refused" in p]
+        assert refused and "executed" not in events
