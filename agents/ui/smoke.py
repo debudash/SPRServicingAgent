@@ -9,18 +9,33 @@ No model is called: it opens the login page, the review queue and the behaviour 
 offline demo scenario.
 """
 
+import subprocess
 import sys
 from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
 
 APP = str(Path(__file__).with_name("app.py"))
+PROBE = str(Path(__file__).with_name("import_probe.py"))
+
+
+def import_problems() -> list[str]:
+    """Issue #166: AppTest loads app.py inside this process, where `agents` is already imported, so
+    the page checks below passed even with #161's broken path. The probe runs as a script from
+    agents/ui in a fresh interpreter with this environment, the way Streamlit loads the page, so
+    a page import that only resolves from the repo root fails here."""
+    run = subprocess.run([sys.executable, PROBE], capture_output=True, text=True, check=False)
+    out = (run.stdout + run.stderr).strip()
+    if run.returncode == 0:
+        print(out)
+        return []
+    return [out or f"import probe exited {run.returncode}"]
 
 
 def main() -> int:
+    problems = import_problems()
     at = AppTest.from_file(APP, default_timeout=120)
     at.run()
-    problems: list[str] = []
 
     def check(where: str) -> None:
         if at.exception:
