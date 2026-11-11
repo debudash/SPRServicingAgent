@@ -325,7 +325,22 @@ def test_issue_172_a_logged_in_customer_sees_their_account_summary_on_top() -> N
         "Free withdrawal left": "$8,745.06",
         "Withdrawals this year": "0",
     }
-    assert "Margaret Holloway" in " ".join(m.value for m in at.markdown)
+    header = " ".join(m.value for m in at.markdown)
+    assert "Margaret Holloway" in header and "SPR-1001" in header
+    assert "Account active" in " ".join(c.value for c in at.caption)
+
+
+def test_issue_172_the_summary_is_re_read_after_a_withdrawal() -> None:
+    runner = FakeRunner()
+    runner.views["SPR-1001"] = MARGARET
+    at = _app(runner)
+    _log_in(at, "SPR-1001", "right")
+    runner.views["SPR-1001"] = MARGARET.model_copy(
+        update={"balance_cents": 7_745_062, "withdrawals_this_year": 1}
+    )
+    at.chat_input[0].set_value("Yes, go ahead").run()
+    shown = {m.label: m.value for m in at.metric}
+    assert shown["Balance"] == "$77,450.62" and shown["Withdrawals this year"] == "1"
 
 
 def test_issue_172_no_figures_when_the_desk_returns_no_account() -> None:
@@ -343,3 +358,4 @@ def test_issue_172_a_guest_sees_no_account_summary() -> None:
     at.button(key="guest").click().run()
     assert not at.exception
     assert len(at.metric) == 0
+    assert "Guest** (product questions only)" in " ".join(m.value for m in at.markdown)

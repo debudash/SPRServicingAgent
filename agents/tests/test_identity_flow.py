@@ -704,3 +704,38 @@ def test_issue_172_trust_withdrawn_after_login_hides_the_summary() -> None:
     desk.login("SPR-1001")
     desk.accounts.trusted.discard("SPR-1001")  # Gate A is read live, not from the login
     assert desk.runner.account(desk.conv) is None
+
+
+def test_issue_172_the_summary_agrees_with_the_gate_for_every_session_kind() -> None:
+    """Review on PR #173: account() restates the gate's rule, so pin the two together. For each
+    kind of session, the header shows figures exactly when a balance question reaches the
+    account."""
+
+    def guest(d: Desk) -> None:
+        d.conv = d.runner.start(None)
+
+    def bound(d: Desk) -> None:
+        d.conv = d.runner.start("SPR-1001")
+
+    def locked(d: Desk) -> None:
+        d.login("SPR-1001")
+        d.step_ups(*WRONG)
+
+    def verified(d: Desk) -> None:
+        d.login("SPR-1001")
+        d.step_ups(RIGHT)
+
+    kinds = {
+        "trusted login": lambda d: d.login("SPR-1001"),
+        "untrusted login": lambda d: d.login("SPR-1002"),
+        "guest": guest,
+        "bound without login": bound,
+        "locked": locked,
+        "step-up passed": verified,
+    }
+    for name, open_session in kinds.items():
+        desk = Desk(IntentKind.ACCOUNT_INFO)
+        open_session(desk)
+        shown = desk.runner.account(desk.conv) is not None
+        reached = Step.GET_ACCOUNT in desk.runner.send(desk.conv, "What's my balance?").steps
+        assert shown == reached, name

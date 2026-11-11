@@ -56,7 +56,7 @@ def _state(session: Session, view: AccountView | None = None) -> ConversationSta
     )
 
 
-def test_version_is_0_6_1() -> None:
+def test_version_is_current() -> None:
     # 0.6.1 (#89) adds CaseReason.WITHDRAWAL_REVIEW, and 0.6.2 the B4 reviewer port, on top of
     # this file's 0.6.0 ports; 0.6.3 (#172) adds LoginDeskRunner.account.
     assert CONTRACTS_VERSION == "0.6.3"

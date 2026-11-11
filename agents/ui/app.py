@@ -185,7 +185,7 @@ def _account_header(runner: LoginDeskRunner) -> None:
     reads the account itself. Re-read on every rerun, so a withdrawal shows at once."""
     customer = st.session_state.get("customer_id")
     if customer is None:
-        st.markdown("**Guest** · product questions only")
+        st.markdown("**Guest** (product questions only)")
         return
     st.markdown(f"**{customer_names().get(customer, customer)}** · {customer}")
     view = runner.account(st.session_state["conversation_id"])
