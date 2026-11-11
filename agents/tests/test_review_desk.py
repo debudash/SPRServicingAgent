@@ -223,3 +223,15 @@ def test_issue_151_a_reject_after_the_approval_is_refused(tmp_path: Path) -> Non
     assert result.outcome is Outcome.NOT_PERMITTED and "approved" in result.text
     assert SqliteCaseStore(desk.conn).status(case_id) is CaseStatus.OPEN  # nothing written
     assert desk.status() is ProposalStatus.APPROVED
+
+
+@pytest.mark.parametrize("decision", [Decision.APPROVE, Decision.REJECT, Decision.REQUEST_INFO])
+def test_issue_155_a_reviewer_id_outside_the_pattern_is_refused(
+    tmp_path: Path, decision: Decision
+) -> None:
+    # Issue #155, found by /code-review on PR #150: "pat!" crashed reject and request_info.
+    desk, case_id = large_withdrawal_with_a_person(tmp_path)
+    with pytest.raises(ValueError, match="reviewer ID"):
+        reviewer(desk).decide(decide(case_id, decision, who="pat!"))
+    assert SqliteCaseStore(desk.conn).status(case_id) is CaseStatus.OPEN
+    assert desk.status() is ProposalStatus.ESCALATED and desk.executions() == 0

@@ -11,6 +11,7 @@ Code, no model: the decision is the person's, and every guard is the one B3 alre
 """
 
 import logging
+import re
 import uuid
 from collections.abc import Callable
 from datetime import date
@@ -21,6 +22,7 @@ from agents.nodes.common import MoneyPath
 from agents.nodes.execute import versions_cited
 from contracts import CONTRACTS_VERSION
 from contracts.messages import (
+    APPROVER_PATTERN,
     CASE_DECIDABLE,
     Approval,
     CasePacket,
@@ -31,6 +33,7 @@ from contracts.messages import (
     ProposalStatus,
     ReviewResult,
 )
+from contracts.money import format_dollars
 from contracts.outcomes import Outcome
 from contracts.ports import AuditEvent, AuditLog, CaseReview, ExecutionRefused, ProposalStore
 from contracts.tools import Node
@@ -38,8 +41,9 @@ from contracts.tools import Node
 logger = logging.getLogger(__name__)
 
 
-def _money(dollars_cents: int) -> str:
-    return f"${dollars_cents / 100:,.2f}"
+def approver(decision: HumanDecision) -> str:
+    """The approver a reviewer's decision is recorded under (contracts APPROVER_PATTERN)."""
+    return f"human:{decision.reviewer_id}"
 
 
 class AgentReviewDesk:
@@ -66,6 +70,11 @@ class AgentReviewDesk:
         return self._cases.get(case_id)
 
     def decide(self, decision: HumanDecision) -> ReviewResult:
+        # Issue #155 (found by /code-review on PR #150): any typed reviewer ID reached the
+        # approvals table's pattern check deep in the money path, so reject and request_info
+        # crashed on "pat!". It is checked first; nothing is written for a bad one.
+        if not re.fullmatch(APPROVER_PATTERN, approver(decision)):
+            raise ValueError(f"reviewer ID {decision.reviewer_id!r}: use letters, digits, _ . -")
         current = self._cases.status(decision.case_id)  # KeyError for an unknown case
         if current not in CASE_DECIDABLE:
             raise ValueError(f"case {decision.case_id} is already {current.value}")
@@ -113,7 +122,7 @@ class AgentReviewDesk:
             approval = Approval(
                 approval_id=f"appr-{uuid.uuid4().hex[:12]}",
                 proposal_id=pid,
-                approver=f"human:{decision.reviewer_id}",
+                approver=approver(decision),
                 decision=Decision.APPROVE,
                 token_hmac=token,
             )
@@ -144,8 +153,8 @@ class AgentReviewDesk:
             reference=done.transaction_id,
             text=(
                 f"Approved by {decision.reviewer_id} and executed: "
-                f"{_money(proposal.quote.amount_cents)} gross, "
-                f"{_money(proposal.quote.net_cents)} to the customer. "
+                f"{format_dollars(proposal.quote.amount_cents)} gross, "
+                f"{format_dollars(proposal.quote.net_cents)} to the customer. "
                 f"Confirmation {done.transaction_id}."
             ),
         )
@@ -167,7 +176,7 @@ class AgentReviewDesk:
                 Approval(
                     approval_id=f"appr-{uuid.uuid4().hex[:12]}",
                     proposal_id=pid,
-                    approver=f"human:{decision.reviewer_id}",
+                    approver=approver(decision),
                     decision=decision.decision,  # reject voids it; request_info leaves it
                 )
             )
@@ -214,7 +223,7 @@ class AgentReviewDesk:
             payload={
                 "case_id": packet.case_id,
                 "decision": decision.decision.value,
-                "reviewer": f"human:{decision.reviewer_id}",
+                "reviewer": approver(decision),
                 **extra,
             },
             versions={"contracts": CONTRACTS_VERSION},

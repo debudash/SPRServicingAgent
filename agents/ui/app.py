@@ -17,6 +17,7 @@ import streamlit as st
 from agents.wiring import MissingApiKeyError, build_desk, customer_ids
 from contracts.messages import CASE_DECIDABLE, CasePacket, CaseStatus, Decision, HumanDecision
 from contracts.money import format_dollars
+from contracts.outcomes import Outcome
 from contracts.ports import LoginDeskRunner, LoginRefused, ReviewDesk, TurnResult
 
 STEP_UP_SHOWN = "Identity check submitted"
@@ -240,19 +241,24 @@ def _review_page(review: ReviewDesk) -> None:
                 (right, Decision.REQUEST_INFO, "Request information"),
             ):
                 if column.button(label, key=f"{decision.value}-{c.case_id}"):
-                    result = review.decide(
-                        HumanDecision(
-                            case_id=c.case_id,
-                            reviewer_id=(reviewer or "reviewer").strip().replace(" ", "_"),
-                            decision=decision,
+                    try:
+                        result = review.decide(
+                            HumanDecision(
+                                case_id=c.case_id,
+                                reviewer_id=(reviewer or "reviewer").strip(),
+                                decision=decision,
+                            )
                         )
-                    )
-                    st.session_state["review_result"] = (result.outcome.value, result.text)
+                        shown_result = (result.outcome, result.text)
+                    except ValueError as refused:  # #155: a bad reviewer ID, or decided meanwhile
+                        shown_result = (Outcome.NOT_PERMITTED, str(refused))
+                    st.session_state["review_result"] = shown_result
                     st.rerun()
     last = st.session_state.pop("review_result", None)
     if last is not None:
         outcome, text = last
-        (st.success if outcome in ("EXECUTED", "ANSWERED") else st.warning)(f"{outcome}: {text}")
+        done = outcome in (Outcome.EXECUTED, Outcome.ANSWERED)
+        (st.success if done else st.warning)(f"{outcome.value}: {text}")
 
 
 def main() -> None:
