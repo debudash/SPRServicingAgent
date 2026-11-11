@@ -53,3 +53,5 @@ Defects found in review are the evidence for workstream F (ADR 0002), so they al
 | #153 | 2026-11-10 | A refused reviewer approval left no audit row; the row followed the execution | review on PR #150 (spec) | 4ff5a55 |
 | #154 | 2026-11-10 | A reviewer's approval was not checked against the case's customer | review on PR #150 (spec) | 69d260e |
 | #155 | 2026-11-10 | A reviewer ID outside the approver pattern crashed reject and request info | review on PR #150 (spec) | 4b52305 |
+| #159 | 2026-11-11 | The identity tests' restricted-value checks failed by chance on timestamps and random IDs | CI on PR #157 | 85d1e49 |
+| #161 | 2026-11-11 | The desk page failed in Docker with "No module named 'agents'" | manual run (owner opened the page) | 0951718 |
