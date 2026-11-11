@@ -55,3 +55,5 @@ Defects found in review are the evidence for workstream F (ADR 0002), so they al
 | #155 | 2026-11-10 | A reviewer ID outside the approver pattern crashed reject and request info | review on PR #150 (spec) | 4b52305 |
 | #159 | 2026-11-11 | The identity tests' restricted-value checks failed by chance on timestamps and random IDs | CI on PR #157 | 85d1e49 |
 | #161 | 2026-11-11 | The desk page failed in Docker with "No module named 'agents'" | manual run (owner opened the page) | 0951718 |
+| #165 | 2026-11-11 | The page smoke skipped a page whose button was missing and still printed PASS | review on PR #163 (spec) | 8535316 |
+| #166 | 2026-11-11 | The page smoke did not load the page on Streamlit's import path, so it could not catch #161 | review on PR #163 (spec) | 672135b |
