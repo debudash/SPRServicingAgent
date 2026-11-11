@@ -76,6 +76,8 @@ class Desk:
         *,
         secret: bytes = b"test-secret",
         enabled: bool = True,
+        chunks: Sequence[KnowledgeChunk] = (),
+        drafts: Sequence[object] = (),
     ) -> None:
         self.audit = MemoryAudit()
         self.conn = open_desk_db(tmp_path / "desk.db")
@@ -84,11 +86,11 @@ class Desk:
         money = money_path(self.conn, self.policy, secret=secret, execution_enabled=enabled)
         self.stores = replace(build_stores(self.conn), money=money)
         self.runner = GraphDeskRunner(
-            search=FakeSearch([]),
+            search=FakeSearch(list(chunks)),
             audit=self.audit,
             models={
                 Role.CONCIERGE: ScriptedChatModel(intents),
-                Role.KNOWLEDGE: ScriptedChatModel(),
+                Role.KNOWLEDGE: ScriptedChatModel(list(drafts)),
                 Role.COMPLIANCE: self.compliance,
             },
             clock=lambda: AS_OF,
@@ -401,3 +403,19 @@ def test_the_executed_row_records_the_policy_versions_cited(tmp_path: Path) -> N
     assert desk.step_up().outcome is Outcome.EXECUTED
     row = desk.conn.execute("SELECT versions FROM audit WHERE event = 'executed'").fetchone()
     assert json.loads(row[0])["documents"] == {"large_withdrawal_policy": 1}  # FR-10
+
+
+def test_issue_140_a_repeated_yes_after_an_execution_quotes_nothing(tmp_path: Path) -> None:
+    # Issue #140, found by the money-path red team (#90): the repeated yes was quoted as a new
+    # withdrawal, and a bare yes then executed a second one.
+    intents = [withdraw(5_000), confirm(5_000), confirm(5_000), confirm()]
+    desk = Desk(tmp_path, intents, [review(), review()]).login()
+    desk.say("Withdraw $5,000.")
+    desk.say("Yes, go ahead with $5,000.")
+    first = desk.proposal_id()
+    assert desk.step_up().outcome is Outcome.EXECUTED
+    again = desk.say("Yes, go ahead with $5,000.")
+    assert again.outcome is Outcome.NOT_PERMITTED and Step.QUOTE not in again.steps
+    assert desk.proposal_id() == first  # nothing new was quoted
+    desk.say("Yes.")
+    assert desk.executions() == 1

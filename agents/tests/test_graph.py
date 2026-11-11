@@ -178,19 +178,36 @@ def test_out_of_scope_skips_knowledge(kind: IntentKind) -> None:  # G-B1-05/06
     assert len(audit.rows) == 1
 
 
-@pytest.mark.parametrize(
-    # account_info left this list in B2 (#59), withdrawal in B3 (#88): both are built now, see
-    # test_identity_flow.py and test_transaction_flow.py.
-    "kind",
-    [IntentKind.FULL_SURRENDER, IntentKind.HARDSHIP_WAIVER],
-)
-def test_other_intents_are_not_permitted_yet(kind: IntentKind) -> None:
-    runner, search, audit = make_runner(kind, [], [FEES])
+def test_change_details_is_not_permitted_yet() -> None:
+    # account_info left the not-yet list in B2 (#59), withdrawal in B3 (#88), and full surrender
+    # and hardship waivers in B4 (#146): see test_review_desk.py.
+    runner, search, audit = make_runner(IntentKind.CHANGE_DETAILS, [], [FEES])
     r = ask(runner)
     assert r.outcome is Outcome.NOT_PERMITTED
     assert "yet" in r.reply_text
     assert search.queries == []
     assert [row.event for row in audit.rows] == [AuditEvent.REFUSED]
+
+
+def test_a_guest_asking_for_a_full_surrender_is_asked_to_log_in() -> None:
+    # B4 (#146): a person handles it (NG-07), but a case names its customer, so a guest gets no
+    # case and nothing is looked up.
+    runner, search, audit = make_runner(IntentKind.FULL_SURRENDER, [], [FEES])
+    r = ask(runner, "Close it out, I want everything.")
+    assert r.outcome is Outcome.NOT_PERMITTED
+    assert "log in" in r.reply_text
+    assert search.queries == [] and Step.CREATE_CASE not in r.steps
+    assert [row.event for row in audit.rows] == [AuditEvent.REFUSED]
+
+
+def test_a_guest_asking_about_a_waiver_gets_the_documents_and_no_case() -> None:
+    # B4 (#146): FR-13's documentation answer from the knowledge base; no account, so no case.
+    draft = cited(FEES, "Waivers need documentation; see the FAQ.")
+    runner, search, _ = make_runner(IntentKind.HARDSHIP_WAIVER, [draft], [FEES])
+    r = ask(runner, "I'm terminally ill. Do I have to pay the surrender fee?")
+    assert r.outcome is Outcome.ANSWERED
+    assert search.queries and Step.CREATE_CASE not in r.steps
+    assert r.citations
 
 
 def test_tool_loop_hits_budget_and_is_unavailable() -> None:

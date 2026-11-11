@@ -9,10 +9,11 @@ claims execution only when an Execution exists (GR-10).
 
 import logging
 import re
+from collections.abc import Iterable
 from typing import Any
 
 from agents.nodes.common import Deps, NodeFn
-from contracts.messages import ComplianceDecision, ProposalStatus
+from contracts.messages import ComplianceDecision, ProposalStatus, Reason
 from contracts.ports import ExecutionRefused
 from contracts.state import ConversationState
 from contracts.tools import Node, Step
@@ -22,8 +23,13 @@ _REF = re.compile(r"^(?P<doc_id>\S+) v(?P<version>\d+) §")
 
 def cited_versions(review: ComplianceDecision | None) -> dict[str, int]:
     """FR-10: the policy versions Compliance cited, read from its decision's references."""
+    return versions_cited(review.reasons if review else ())
+
+
+def versions_cited(reasons: Iterable[Reason]) -> dict[str, int]:
+    """FR-10: the policy versions a set of reasons cites (Compliance's, or a case packet's)."""
     versions: dict[str, int] = {}
-    for reason in review.reasons if review else ():
+    for reason in reasons:
         m = _REF.match(reason.policy_ref)
         if m:
             versions[m["doc_id"]] = int(m["version"])

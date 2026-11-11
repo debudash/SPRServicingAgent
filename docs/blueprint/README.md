@@ -72,7 +72,7 @@ logged (FR-22).
 |---|---|---|---|---|
 | Concierge | Haiku 5.5 | low | none (it classifies intent; credentials never reach it, see ARCHITECTURE §4) | quotes, answers product facts, approves, sees DOB or SSN digits |
 | Knowledge | Sonnet 5.5 | medium | `search_kb` | reads account data |
-| Transaction | Sonnet 5.5 | medium | `get_account`, `quote`, `propose` | approves its own proposal, executes |
+| Transaction | code (ADR 0008) | n/a | `get_account`, `quote`, `propose` | approves its own proposal, executes |
 | Compliance | Sonnet 5.5 | high | `get_policy` (read-only policy sections) | executes, edits a proposal |
 | Case | Haiku 5.5 | low | `create_case` | decides the case |
 

@@ -21,7 +21,7 @@ from pydantic import ValidationError
 from agents.graph import build_graph
 from agents.guards.credentials import DOB_MASK, Credentials, capture
 from agents.llm import chat_model, load_model_map
-from agents.nodes.common import Deps, Stores, TurnContext
+from agents.nodes.common import Deps, Stores, TurnContext, shown_citations
 from agents.nodes.respond import NO_STEP_UP_TEXT, STEP_UP_INCOMPLETE_TEXT, UNAVAILABLE_TEXT
 from agents.tools.registry import ToolRegistry
 from contracts import CONTRACTS_VERSION
@@ -244,11 +244,7 @@ class GraphDeskRunner:
             self._audit_fallback(state, ctx)
 
         final = outcome_state or state
-        citations = (
-            final.knowledge_answer.citations
-            if outcome is Outcome.ANSWERED and final.knowledge_answer is not None
-            else ()
-        )
+        citations = shown_citations(final, outcome)
         trace = list(final.trace)
         for node in ctx.nodes:
             trace.append(TraceEvent(turn=turn_no, node=node))

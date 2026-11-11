@@ -20,6 +20,13 @@ is for guests only) once the lanes comply (#102, #103), the same way 0.4.0 was m
 review, which always names its proposal and carries its quote; three optional `CasePacket` fields
 (`proposal_id`, `compliance_decision`, `signals`) for the B4 reviewer; and `RuleFlag.OPEN_REVIEW`
 (#136), a withdrawal in this conversation is already with a person.
+
+
+0.6.2 (B4) is additive: `CaseStatus` and the decisions that move a case (`CASE_DECIDABLE`,
+`DECISION_CASE_STATUS`); a new `CaseReview` port for the reviewer's reads and decision (`get`,
+`list_cases`, `status`, `decide`); `CaseSummary` and `ReviewResult`; the `ReviewDesk` port, through
+which a human approval executes by the same path as B3; and four case reasons for requests only a
+person decides (`WAIVER_REQUEST`, `HARDSHIP`, `RMD`, `FULL_SURRENDER`).
 """
 
-CONTRACTS_VERSION = "0.6.1"
+CONTRACTS_VERSION = "0.6.2"
