@@ -283,6 +283,7 @@ cases:
     bullet: B4
     rules: [GR-19, GR-02, GR-03]
     prd: [FR-16, D-02]
+    status: retired
     customer: SPR-1004
     ask: "I want to withdraw $30,000."
     quote: {amount: "30000.00", free: "21000.00", excess: "9000.00", rate: "3%", charge: "270.00", net: "29730.00", threshold_tier: human, irs_notice: false}
@@ -292,12 +293,17 @@ cases:
       tools: [quote, create_case]
       not_tools: [execute]
       executed: false
-    note: Over $25,000, so a human decides even though the quote is shown.
+    note: >-
+      Retired 2026-11-10 (owner decision, #158): D-02 still applies, but this one-turn shape no longer
+      matches the spec. A case opened on the quote turn, before the customer's confirmation, could never be
+      approved by a reviewer (FR-08; the approval store refuses it, #98). BH-B4-03 now pins D-02 over two
+      turns. (It said: "Over $25,000, so a human decides even though the quote is shown.")
 
   - id: G-B4-02
     bullet: B4
     rules: [GR-19]
     prd: [D-02]
+    status: retired
     customer: SPR-1003
     ask: "Please withdraw $6,000."
     quote: {amount: "6000.00", free: "1120.00", excess: "4880.00", rate: "5%", charge: "244.00", net: "5756.00", threshold_tier: human, irs_notice: true}
@@ -306,7 +312,9 @@ cases:
       tools: [quote, create_case]
       not_tools: [execute]
       executed: false
-    note: Under $25,000 but over 50% of the $11,200 balance.
+    note: >-
+      Retired 2026-11-10 (owner decision, #158), for the same reason as G-B4-01. BH-B4-04 now pins it over
+      two turns. (It said: "Under $25,000 but over 50% of the $11,200 balance.")
 
   - id: G-B4-03
     bullet: B4
