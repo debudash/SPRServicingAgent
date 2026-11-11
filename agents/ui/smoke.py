@@ -9,35 +9,58 @@ No model is called: it opens the login page, the review queue and the behaviour 
 offline demo scenario.
 """
 
+import subprocess
 import sys
 from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
 
 APP = str(Path(__file__).with_name("app.py"))
+PROBE = str(Path(__file__).with_name("import_probe.py"))
+
+
+def import_problems() -> list[str]:
+    """Issue #166: AppTest loads app.py inside this process, where `agents` is already imported, so
+    the page checks below passed even with #161's broken path. The probe runs as a script from
+    agents/ui in a fresh interpreter with this environment, the way Streamlit loads the page, so
+    a page import that only resolves from the repo root fails here."""
+    run = subprocess.run([sys.executable, PROBE], capture_output=True, text=True, check=False)
+    out = (run.stdout + run.stderr).strip()
+    if run.returncode == 0:
+        print(out)
+        return []
+    return [out or f"import probe exited {run.returncode}"]
 
 
 def main() -> int:
+    problems = import_problems()
     at = AppTest.from_file(APP, default_timeout=120)
     at.run()
-    problems: list[str] = []
 
     def check(where: str) -> None:
         if at.exception:
             problems.append(f"{where}: {at.exception[0].value}")
 
+    # Issue #165: a missing button used to skip its page and still print PASS (found when the review
+    # desk was absent: no queue button, nothing checked). Every page is expected in the container,
+    # so a button that is not there is a failure, reported under the page it should have opened.
+    def click(key: str, where: str) -> bool:
+        if not [b for b in at.button if b.key == key]:
+            problems.append(f"{where}: no {key!r} button")
+            return False
+        at.button(key=key).click().run()
+        return True
+
     check("login page")
     if not at.selectbox(key="login_customer").options:
         problems.append("login page: no customers in the dropdown")
-    if [b for b in at.button if b.key == "open_review"]:
-        at.button(key="open_review").click().run()
+    if click("open_review", "review queue"):
         check("review queue")
-        at.button(key="close_review").click().run()
-    if [b for b in at.button if b.key == "open_demo"]:
-        at.button(key="open_demo").click().run()
+        click("close_review", "review queue")
+    if click("open_demo", "behaviour demo"):
         check("behaviour demo")
-        at.button(key="demo_run").click().run()
-        check("behaviour demo, one scenario run")
+        if click("demo_run", "behaviour demo, one scenario run"):
+            check("behaviour demo, one scenario run")
     for p in problems:
         print("FAIL", p)
     print("page smoke:", "FAIL" if problems else "PASS")
