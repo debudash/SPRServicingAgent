@@ -208,7 +208,9 @@ def _chat(runner: LoginDeskRunner) -> None:
     _account_header(runner)
     for m in st.session_state["messages"]:
         with st.chat_message(m["role"]):
-            st.write(m["text"])
+            # Issue #175: st.write is Markdown, which read the text between two $ amounts as a
+            # formula and garbled every balance and quote. _plain escapes them, as the demo did.
+            st.markdown(_plain(m["text"]))
             if m.get("outcome"):
                 st.caption(f"outcome: {m['outcome']}")
     last: TurnResult | None = st.session_state["last_result"]
@@ -231,7 +233,7 @@ _FILTERS = {
 
 
 def _packet_view(packet: CasePacket) -> None:
-    st.markdown(f"**Request:** {packet.request_summary}")
+    st.markdown(f"**Request:** {_plain(packet.request_summary)}")  # #175
     q = packet.quote
     if q is not None:
         st.markdown("**Quote the customer saw**")
@@ -253,11 +255,11 @@ def _packet_view(packet: CasePacket) -> None:
     if packet.compliance_decision is not None:
         st.markdown(f"**Compliance agent:** {packet.compliance_decision.value}")
         for r in packet.compliance_reasons:
-            st.write(f"- {r.text} ({r.policy_ref})")
+            st.markdown(_plain(f"- {r.text} ({r.policy_ref})"))
     if packet.signals:
         st.markdown("**Signals:** " + ", ".join(sorted(s.value for s in packet.signals)))
-    st.markdown(f"**Conversation excerpt (restricted fields removed):** {packet.excerpt}")
-    st.markdown(f"**Recommendation:** {packet.recommendation}")
+    st.markdown(f"**Conversation excerpt (restricted fields removed):** {_plain(packet.excerpt)}")
+    st.markdown(f"**Recommendation:** {_plain(packet.recommendation)}")
 
 
 def _review_page(review: ReviewDesk) -> None:
