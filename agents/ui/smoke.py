@@ -41,18 +41,26 @@ def main() -> int:
         if at.exception:
             problems.append(f"{where}: {at.exception[0].value}")
 
+    # Issue #165: a missing button used to skip its page and still print PASS (found when the review
+    # desk was absent: no queue button, nothing checked). Every page is expected in the container,
+    # so a button that is not there is a failure, reported under the page it should have opened.
+    def click(key: str, where: str) -> bool:
+        if not [b for b in at.button if b.key == key]:
+            problems.append(f"{where}: no {key!r} button")
+            return False
+        at.button(key=key).click().run()
+        return True
+
     check("login page")
     if not at.selectbox(key="login_customer").options:
         problems.append("login page: no customers in the dropdown")
-    if [b for b in at.button if b.key == "open_review"]:
-        at.button(key="open_review").click().run()
+    if click("open_review", "review queue"):
         check("review queue")
-        at.button(key="close_review").click().run()
-    if [b for b in at.button if b.key == "open_demo"]:
-        at.button(key="open_demo").click().run()
+        click("close_review", "review queue")
+    if click("open_demo", "behaviour demo"):
         check("behaviour demo")
-        at.button(key="demo_run").click().run()
-        check("behaviour demo, one scenario run")
+        if click("demo_run", "behaviour demo, one scenario run"):
+            check("behaviour demo, one scenario run")
     for p in problems:
         print("FAIL", p)
     print("page smoke:", "FAIL" if problems else "PASS")
