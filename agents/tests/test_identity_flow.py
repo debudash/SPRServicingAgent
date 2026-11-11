@@ -6,6 +6,7 @@ follow the login flow. Each earlier regression keeps its intent: G-B2-01..06, BH
 #74, #82, #84 and the review hand-offs from PR #61 and PR #72.
 """
 
+import re
 import sqlite3
 from datetime import date
 
@@ -142,14 +143,38 @@ class Desk:
 
     def everything_kept(self) -> str:
         s = self.state()
-        return " ".join(
-            [
-                s.model_dump_json(),
-                " ".join(r.model_dump_json() for r in self.audit.rows),
-                " ".join(p.model_dump_json() for p in self.cases.opened),
-                " ".join(str(m.content) for call in self.concierge.calls for m in call),
-            ]
+        return without_generated(
+            " ".join(
+                [
+                    s.model_dump_json(),
+                    " ".join(r.model_dump_json() for r in self.audit.rows),
+                    " ".join(p.model_dump_json() for p in self.cases.opened),
+                    " ".join(str(m.content) for call in self.concierge.calls for m in call),
+                ]
+            )
         )
+
+
+# Issue #159 (found by CI on PR #157): audit rows carry wall-clock timestamps with microseconds and
+# IDs carry random hex, so the restricted-value checks below failed by chance on 0000, 1111 or 1958
+# with nothing leaked. Only generated values are masked: an ISO timestamp, or an ID with one of the
+# desk's prefixes. A bare digit run (a compact date of birth, SSN digits) is still checked.
+_GENERATED = re.compile(
+    r"\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:\d{2})?"
+    r"|\b(?:conv|prop|CASE|appr|TX)-[0-9A-Fa-f]+\b"
+)
+
+
+def without_generated(text: str) -> str:
+    return _GENERATED.sub("<generated>", text)
+
+
+def test_issue_159_only_generated_values_are_masked() -> None:
+    # Issue #159, found by CI on PR #157: the check failed on a timestamp's microseconds.
+    text = "at 2026-11-11T02:29:14.000012+00:00 conv-a0000b CASE-1958AB11 TX-11110000 dob 19580314"
+    masked = without_generated(text)
+    assert "0000" not in masked.replace("19580314", "")
+    assert "1111" not in masked and "19580314" in masked  # a compact date of birth still shows
 
 
 def test_the_runner_is_a_login_runner() -> None:
