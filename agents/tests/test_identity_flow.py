@@ -437,14 +437,17 @@ def test_issue_74_guest_credentials_with_a_product_question_get_the_answer() -> 
 def test_issue_74_credentials_with_an_unbuilt_request_are_never_answered(
     stepped_up_first: bool,
 ) -> None:
-    # A withdrawal was the unbuilt request until #88 built it; a full surrender still is.
-    desk = Desk(IntentKind.FULL_SURRENDER)
+    # A withdrawal was the unbuilt request until #88 built it, a full surrender until #146 (B4);
+    # changing contact details still is.
+    desk = Desk(IntentKind.CHANGE_DETAILS)
     desk.login("SPR-1001")
     if stepped_up_first:  # even a session that passed the step-up gets no unbuilt answer
         desk.step_ups(RIGHT)
-    r = desk.runner.send(desk.conv, "1958-03-14 and 7823, surrender the whole contract please")
+    checks = desk.identity.checks
+    r = desk.runner.send(desk.conv, "1958-03-14 and 7823, change my address please")
     assert r.outcome is Outcome.NOT_PERMITTED
     assert "yet" in r.reply_text
+    assert desk.identity.checks == checks  # the typed credentials are never checked
 
 
 # ---------- review follow-ups on PR #72 ----------

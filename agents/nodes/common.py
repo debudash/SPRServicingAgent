@@ -13,11 +13,13 @@ from agents.guards.credentials import Credentials
 from agents.tools.registry import ToolRegistry
 from contracts.messages import (
     AccountView,
+    Citation,
     IntentKind,
     Proposal,
     ProposalStatus,
     QuoteRefusalReason,
 )
+from contracts.outcomes import Outcome
 from contracts.ports import (
     AccountStore,
     ApprovalStore,
@@ -42,6 +44,25 @@ ACCOUNT_INTENTS = frozenset({IntentKind.ACCOUNT_INFO, IntentKind.VERIFY})
 # Intents that quote or confirm a withdrawal (#88): the same login and Gate A first. A quote
 # needs no step-up; the yes raises it (ADR 0007).
 MONEY_INTENTS = frozenset({IntentKind.WITHDRAWAL, IntentKind.CONFIRM})
+# B4 (#146): requests only a person decides (FR-13 to FR-15, NG-01, NG-07). For a logged-in
+# customer the documents answer what they can and a case opens; a guest gets the answer only.
+REQUEST_INTENTS = frozenset({IntentKind.HARDSHIP_WAIVER, IntentKind.RMD, IntentKind.FULL_SURRENDER})
+
+
+def shown_citations(state: ConversationState, outcome: Outcome) -> tuple[Citation, ...]:
+    """The citations a reply shows: an answer's, and (B4, #146) the documents' part of a reply
+    that also opened a case for a request only a person decides (G-B4-05)."""
+    answer = state.knowledge_answer
+    if answer is None:
+        return ()
+    if outcome is Outcome.ANSWERED:
+        return answer.citations
+    request = state.intent is not None and state.intent.kind in REQUEST_INTENTS
+    if outcome is Outcome.NEEDS_HUMAN and request and answer.found:
+        return answer.citations
+    return ()
+
+
 # A proposal still waiting for its yes or its approval (#88). A new quote voids it (GR-18).
 LIVE = frozenset({ProposalStatus.QUOTED, ProposalStatus.CONFIRMED})
 

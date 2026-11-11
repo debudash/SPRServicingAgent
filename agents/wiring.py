@@ -14,8 +14,9 @@ from pathlib import Path
 from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
 
 from agents.nodes.common import MoneyPath, Stores
+from agents.review import AgentReviewDesk
 from agents.runner import GraphDeskRunner
-from contracts.ports import LoginDeskRunner, PolicySource
+from contracts.ports import LoginDeskRunner, PolicySource, ReviewDesk
 from contracts.tokens import approval_token
 from data.identity import SqliteIdentityCheck
 from data.knowledge_index.index import ChromaKnowledgeSearch
@@ -53,6 +54,12 @@ def customer_ids() -> list[str]:
 
 
 def build_runner() -> LoginDeskRunner:
+    return build_desk()[0]
+
+
+def build_desk() -> tuple[LoginDeskRunner, ReviewDesk]:
+    """The customer's chat runner and the reviewer's desk (B4, #146) over one desk database, so a
+    reviewer's decision lands in the same stores, ledger and audit chain as the conversation."""
     require_api_key()
     settings = load_settings()
     settings.var_dir.mkdir(parents=True, exist_ok=True)
@@ -68,11 +75,23 @@ def build_runner() -> LoginDeskRunner:
         secret=settings.approval_secret,
         execution_enabled=settings.execution_enabled,
     )
-    return GraphDeskRunner(
+    stores = replace(build_stores(conn), money=money)
+    runner = GraphDeskRunner(
         search=search,
         audit=SqliteAuditLog(conn),
         clock=lambda: as_of,
-        stores=replace(build_stores(conn), money=money),
+        stores=stores,
+    )
+    return runner, review_desk(conn, stores, money)
+
+
+def review_desk(conn: sqlite3.Connection, stores: Stores, money: MoneyPath) -> ReviewDesk:
+    """B4 (#146): the reviewer's desk over the same stores and money path as the runner."""
+    return AgentReviewDesk(
+        cases=SqliteCaseStore(conn),
+        proposals=stores.proposals,
+        money=money,
+        audit=SqliteAuditLog(conn),
     )
 
 

@@ -1,13 +1,25 @@
 """Chat UI with a fake runner (no network, no model): login page, chat, step-up form (ADR 0007)."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
 from streamlit.testing.v1 import AppTest
 
 from agents.wiring import MissingApiKeyError, require_api_key
-from contracts.messages import Citation
+from contracts.messages import (
+    CasePacket,
+    CaseReason,
+    CaseStatus,
+    CaseSummary,
+    Citation,
+    Decision,
+    HumanDecision,
+    Quote,
+    ReviewResult,
+    RuleFlag,
+    ThresholdTier,
+)
 from contracts.outcomes import Outcome
 from contracts.ports import LoginRefused, TurnResult, Usage
 from contracts.tools import Node
@@ -174,3 +186,107 @@ def test_require_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
         require_api_key()
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     require_api_key()
+
+
+# ---------- B4: the review queue (#146) ----------
+class FakeReview:
+    """A ReviewDesk with one open withdrawal review."""
+
+    def __init__(self) -> None:
+        self.decisions: list[HumanDecision] = []
+        self.status = CaseStatus.OPEN
+
+    def _row(self) -> CaseSummary:
+        return CaseSummary(
+            case_id="CASE-1",
+            customer_id="SPR-1004",
+            opened_for=CaseReason.WITHDRAWAL_REVIEW,
+            status=self.status,
+            opened_at=datetime(2026, 11, 10, tzinfo=UTC),
+            proposal_id="prop-1",
+            decided_by="human:pat" if self.decisions else None,
+        )
+
+    def queue(
+        self, status: CaseStatus | None = None, customer_id: str | None = None
+    ) -> list[CaseSummary]:
+        row = self._row()
+        if customer_id is not None and customer_id != row.customer_id:
+            return []
+        return [row] if status in (None, row.status) else []
+
+    def case(self, case_id: str) -> CasePacket | None:
+        return CasePacket(
+            case_id="CASE-1",
+            conversation_id="CV1",
+            customer_id="SPR-1004",
+            opened_for=CaseReason.WITHDRAWAL_REVIEW,
+            request_summary="A withdrawal needs a person's review.",
+            quote=QUOTE,
+            rule_flags=frozenset({RuleFlag.OVER_AMOUNT}),
+            excerpt="I want to withdraw $30,000.",
+            recommendation="Review the proposal and its quote, then approve or reject it.",
+            proposal_id="prop-1",
+        )
+
+    def decide(self, decision: HumanDecision) -> ReviewResult:
+        self.decisions.append(decision)
+        self.status = CaseStatus.APPROVED
+        return ReviewResult(
+            case_id="CASE-1",
+            decision=decision.decision,
+            outcome=Outcome.EXECUTED,
+            reference="TX-1",
+            text="Approved by pat and executed. Confirmation TX-1.",
+        )
+
+
+QUOTE = Quote(
+    amount_cents=3_000_000,
+    free_cents=2_100_000,
+    excess_cents=900_000,
+    rate_bp=300,
+    charge_cents=27_000,
+    net_cents=2_973_000,
+    contract_year=5,
+    threshold_tier=ThresholdTier.HUMAN,
+    irs_notice=False,
+)
+
+
+def _review_app(review: FakeReview) -> AppTest:
+    at = AppTest.from_file(APP, default_timeout=30)
+    at.session_state["runner"] = FakeRunner()
+    at.session_state["review"] = review
+    at.run()
+    return at
+
+
+def test_staff_open_the_review_queue_and_see_the_packet() -> None:
+    at = _review_app(FakeReview())
+    at.button(key="open_review").click().run()
+    assert not at.exception
+    page = " ".join(m.value for m in at.markdown)
+    assert "Review queue" in " ".join(h.value for h in at.subheader)
+    assert "over_amount" in page and "I want to withdraw $30,000." in page
+    assert at.table  # the quote's figures
+
+
+def test_a_reviewer_approves_from_the_queue() -> None:
+    review = FakeReview()
+    at = _review_app(review)
+    at.button(key="open_review").click().run()
+    at.text_input(key="reviewer_id").input("pat").run()
+    at.button(key="approve-CASE-1").click().run()
+    assert not at.exception
+    assert [(d.reviewer_id, d.decision) for d in review.decisions] == [("pat", Decision.APPROVE)]
+    assert any("TX-1" in s.value for s in at.success)
+
+
+def test_the_customer_sees_their_cases() -> None:  # FR-18
+    at = _review_app(FakeReview())
+    _log_in(at, "SPR-1004", "right")
+    assert not at.exception
+    assert any("CASE-1" in m.value for m in at.sidebar.markdown) or any(
+        "CASE-1" in str(t.value) for t in at.sidebar.text
+    )

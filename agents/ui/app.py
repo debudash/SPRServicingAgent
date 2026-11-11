@@ -1,36 +1,54 @@
-"""The desk's UI: a login page, the chat, and the step-up form (ADR 0007).
+"""The desk's UI: a login page, the chat, the step-up form (ADR 0007) and the review queue (B4).
 
 The login page stands in for upstream authentication: a customer dropdown and a password, or
 "Continue without logging in" for product questions. In the chat, the sidebar shows why the last
-turn went as it did. When a withdrawal needs the step-up check, a masked form appears outside the
-chat; its values go to `runner.step_up` and are never shown or sent as a message.
-Tests inject a fake runner via `st.session_state["runner"]`.
+turn went as it did and the customer's cases (FR-18). When a withdrawal needs the step-up check, a
+masked form appears outside the chat; its values go to `runner.step_up` and are never shown or
+sent as a message. The review queue is the human reviewer's page (FR-17, #146): a person reads the
+case packet and approves, rejects or asks for information; an approval executes through the same
+guarded path as the desk's own.
+Tests inject fakes via `st.session_state["runner"]` and `st.session_state["review"]`.
 """
 
 from datetime import date
 
 import streamlit as st
 
-from agents.wiring import MissingApiKeyError, build_runner, customer_ids
-from contracts.ports import LoginDeskRunner, LoginRefused, TurnResult
+from agents.wiring import MissingApiKeyError, build_desk, customer_ids
+from contracts.messages import (
+    CASE_DECIDABLE,
+    CasePacket,
+    CaseReason,
+    CaseStatus,
+    Decision,
+    HumanDecision,
+)
+from contracts.money import format_dollars
+from contracts.outcomes import Outcome
+from contracts.ports import LoginDeskRunner, LoginRefused, ReviewDesk, TurnResult
 
 STEP_UP_SHOWN = "Identity check submitted"
-_CHAT_KEYS = ("conversation_id", "who", "messages", "last_result")
+_CHAT_KEYS = ("conversation_id", "who", "messages", "last_result", "customer_id")
 
 
 @st.cache_resource
-def _real_runner() -> LoginDeskRunner:
-    return build_runner()
+def _real_desk() -> tuple[LoginDeskRunner, ReviewDesk]:
+    return build_desk()
 
 
 def _runner() -> LoginDeskRunner | None:
     if "runner" not in st.session_state:
         try:
-            st.session_state["runner"] = _real_runner()
+            st.session_state["runner"], st.session_state["review"] = _real_desk()
         except MissingApiKeyError:
             return None
     runner: LoginDeskRunner = st.session_state["runner"]
     return runner
+
+
+def _review() -> ReviewDesk | None:
+    review: ReviewDesk | None = st.session_state.get("review")
+    return review
 
 
 def _open_chat(conversation_id: str, who: str) -> None:
@@ -51,11 +69,18 @@ def _login_page(runner: LoginDeskRunner) -> None:
             st.error("That customer and password don't match. Please try again.")
         else:
             _open_chat(result, f"Logged in as {customer}")
+            st.session_state["customer_id"] = str(customer)
             st.rerun()
     st.divider()
     if st.button("Continue without logging in", key="guest"):
         _open_chat(runner.start(None), "Guest (product questions only)")
         st.rerun()
+    if _review() is not None:
+        st.divider()
+        st.caption("SPR staff")
+        if st.button("Open the review queue", key="open_review"):
+            st.session_state["view"] = "review"
+            st.rerun()
 
 
 def _sidebar(result: TurnResult | None) -> None:
@@ -64,6 +89,7 @@ def _sidebar(result: TurnResult | None) -> None:
         for key in _CHAT_KEYS:
             st.session_state.pop(key, None)
         st.rerun()
+    _your_cases()
     st.sidebar.header("Why it answered this way")
     if result is None:
         st.sidebar.write("Send a message to see the turn's details.")
@@ -83,6 +109,24 @@ def _sidebar(result: TurnResult | None) -> None:
         f"**Cost:** ${u.cost_micros / 1_000_000:.4f} "
         f"({u.input_tokens} in / {u.output_tokens} out tokens, {result.latency_ms} ms)"
     )
+
+
+def _label(reason: CaseReason) -> str:
+    return reason.value.replace("_", " ")
+
+
+def _your_cases() -> None:
+    """FR-18: the customer sees where each of their cases stands, including a reviewer's
+    decision made after the conversation."""
+    review, customer = _review(), st.session_state.get("customer_id")
+    if review is None or customer is None:
+        return
+    cases = review.queue(customer_id=customer)
+    if not cases:
+        return
+    st.sidebar.header("Your cases")
+    for c in cases:
+        st.sidebar.write(f"{c.case_id}: {_label(c.opened_for)} ({c.status.value})")
 
 
 def _record(customer_text: str, result: TurnResult) -> None:
@@ -134,6 +178,97 @@ def _chat(runner: LoginDeskRunner) -> None:
     _sidebar(last)
 
 
+# ---------- B4: the review queue (FR-16, FR-17, #146) ----------
+_FILTERS = {
+    "Waiting for a decision": (CaseStatus.OPEN, CaseStatus.INFO_REQUESTED),
+    "Approved": (CaseStatus.APPROVED,),
+    "Rejected": (CaseStatus.REJECTED,),
+    "All": tuple(CaseStatus),
+}
+
+
+def _packet_view(packet: CasePacket) -> None:
+    st.markdown(f"**Request:** {packet.request_summary}")
+    q = packet.quote
+    if q is not None:
+        st.markdown("**Quote the customer saw**")
+        st.table(
+            {
+                "Gross": [format_dollars(q.amount_cents)],
+                "Free": [format_dollars(q.free_cents)],
+                "Excess": [format_dollars(q.excess_cents)],
+                "Rate": [f"{q.rate_bp / 100:g}%"],
+                "Charge": [format_dollars(q.charge_cents)],
+                "Net": [format_dollars(q.net_cents)],
+                "Tier": [q.threshold_tier.value],
+                "IRS notice": ["yes" if q.irs_notice else "no"],
+            }
+        )
+    if packet.rule_flags:
+        flags = ", ".join(sorted(f.value for f in packet.rule_flags))
+        st.markdown(f"**Rule flags (code):** {flags}")
+    if packet.compliance_decision is not None:
+        st.markdown(f"**Compliance agent:** {packet.compliance_decision.value}")
+        for r in packet.compliance_reasons:
+            st.write(f"- {r.text} ({r.policy_ref})")
+    if packet.signals:
+        st.markdown("**Signals:** " + ", ".join(sorted(s.value for s in packet.signals)))
+    st.markdown(f"**Conversation excerpt (restricted fields removed):** {packet.excerpt}")
+    st.markdown(f"**Recommendation:** {packet.recommendation}")
+
+
+def _review_page(review: ReviewDesk) -> None:
+    st.subheader("Review queue")
+    st.caption(
+        "A person decides every case here. Approving a withdrawal executes it through the same "
+        "guarded path as the desk: a token bound to this exact proposal, then the ledger once."
+    )
+    if st.button("Back to the login page", key="close_review"):
+        st.session_state.pop("view", None)
+        st.rerun()
+    reviewer = st.text_input("Your reviewer ID", value="reviewer", key="reviewer_id")
+    shown = st.radio("Show", list(_FILTERS), horizontal=True, key="review_filter")
+    wanted = _FILTERS[str(shown)]
+    cases = [c for c in review.queue() if c.status in wanted]
+    if not cases:
+        st.info("No cases here.")
+    for c in cases:
+        title = f"{c.case_id} · {c.customer_id} · {_label(c.opened_for)} · {c.status.value}"
+        with st.expander(title, expanded=c.status in CASE_DECIDABLE):
+            packet = review.case(c.case_id)
+            if packet is not None:
+                _packet_view(packet)
+            if c.decided_by:
+                st.caption(f"Decided by {c.decided_by}")
+            if c.status not in CASE_DECIDABLE:
+                continue
+            left, middle, right = st.columns(3)
+            for column, decision, label in (
+                (left, Decision.APPROVE, "Approve"),
+                (middle, Decision.REJECT, "Reject"),
+                (right, Decision.REQUEST_INFO, "Request information"),
+            ):
+                if column.button(label, key=f"{decision.value}-{c.case_id}"):
+                    try:
+                        result = review.decide(
+                            HumanDecision(
+                                case_id=c.case_id,
+                                reviewer_id=(reviewer or "reviewer").strip(),
+                                decision=decision,
+                            )
+                        )
+                        shown_result = (result.outcome, result.text)
+                    except ValueError as refused:  # #155: a bad reviewer ID, or decided meanwhile
+                        shown_result = (Outcome.NOT_PERMITTED, str(refused))
+                    st.session_state["review_result"] = shown_result
+                    st.rerun()
+    last = st.session_state.pop("review_result", None)
+    if last is not None:
+        outcome, text = last
+        done = outcome in (Outcome.EXECUTED, Outcome.ANSWERED)
+        (st.success if done else st.warning)(f"{outcome.value}: {text}")
+
+
 def main() -> None:
     st.set_page_config(page_title="SPR Withdrawal & Hardship Desk")
     st.title("Withdrawal & Hardship Case Desk")
@@ -143,6 +278,10 @@ def main() -> None:
             "ANTHROPIC_API_KEY is not set. Add it to a `.env` file in the repo root "
             "(or export it) and restart the desk."
         )
+        return
+    review = _review()
+    if st.session_state.get("view") == "review" and review is not None:
+        _review_page(review)
         return
     if "conversation_id" not in st.session_state:
         _login_page(runner)

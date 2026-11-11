@@ -76,6 +76,8 @@ class Desk:
         *,
         secret: bytes = b"test-secret",
         enabled: bool = True,
+        chunks: Sequence[KnowledgeChunk] = (),
+        drafts: Sequence[object] = (),
     ) -> None:
         self.audit = MemoryAudit()
         self.conn = open_desk_db(tmp_path / "desk.db")
@@ -84,11 +86,11 @@ class Desk:
         money = money_path(self.conn, self.policy, secret=secret, execution_enabled=enabled)
         self.stores = replace(build_stores(self.conn), money=money)
         self.runner = GraphDeskRunner(
-            search=FakeSearch([]),
+            search=FakeSearch(list(chunks)),
             audit=self.audit,
             models={
                 Role.CONCIERGE: ScriptedChatModel(intents),
-                Role.KNOWLEDGE: ScriptedChatModel(),
+                Role.KNOWLEDGE: ScriptedChatModel(list(drafts)),
                 Role.COMPLIANCE: self.compliance,
             },
             clock=lambda: AS_OF,

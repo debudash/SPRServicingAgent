@@ -9,7 +9,15 @@ from dataclasses import dataclass
 from typing import Any
 
 from agents.nodes import case
-from agents.nodes.common import ACCOUNT_INTENTS, MONEY_INTENTS, Deps, NodeFn, is_live
+from agents.nodes.common import (
+    ACCOUNT_INTENTS,
+    MONEY_INTENTS,
+    REQUEST_INTENTS,
+    Deps,
+    NodeFn,
+    is_live,
+    shown_citations,
+)
 from contracts.messages import (
     AccountView,
     CaseReason,
@@ -231,6 +239,40 @@ def _account_text(view: AccountView) -> str:
     )
 
 
+LOGIN_FOR_REQUEST_TEXT = (
+    "A person on our team handles that request, and they need to know whose contract it is. "
+    f"Please log in and ask again, or call SPR Financials at {CONTACT}."
+)
+_REQUEST_CASE_TEXT = {
+    # Issue #152: never implies a waiver may apply (FR-14, NG-01); the documents' answer before
+    # this says which waivers exist and what they need.
+    IntentKind.HARDSHIP_WAIVER: (
+        "There is no general hardship waiver: surrender charges are waived only in the cases our "
+        "documents list. I've opened case {case_id} so a person on our team can go through your "
+        "situation and options with you. Nothing has been waived or withdrawn."
+    ),
+    IntentKind.RMD: (
+        "I've opened case {case_id} so a person on our team can confirm your required minimum "
+        "distribution with you. Nothing has been withdrawn."
+    ),
+    IntentKind.FULL_SURRENDER: (
+        "A full surrender is always handled by a person on our team, so nothing has been "
+        "withdrawn. I've opened case {case_id}; they'll contact you to go through it."
+    ),
+}
+
+
+def _request_text(state: ConversationState, case_id: str) -> str:
+    """B4 (#146): the documents' answer, when there is one, then what happens next. Never says a
+    waiver applies (FR-13, FR-14, NG-01)."""
+    assert state.intent is not None
+    then = _REQUEST_CASE_TEXT[state.intent.kind].format(case_id=case_id)
+    answer = state.knowledge_answer
+    if answer is not None and answer.found:
+        return f"{answer.text}\n\n{then}"
+    return then
+
+
 def _case_text(case_id: str, locked: bool) -> str:
     if locked:
         return (
@@ -312,10 +354,14 @@ def _decide(
     if result is not None:
         return result
     packet = state.case_packet
+    if packet is not None and kind in REQUEST_INTENTS:  # B4 (#146)
+        return Outcome.NEEDS_HUMAN, _request_text(state, packet.case_id), packet.case_id
     if packet is not None:
         locked = state.gate is GateResult.LOCKED_NOW
         outcome = Outcome.NOT_PERMITTED if locked else Outcome.NEEDS_HUMAN
         return outcome, _case_text(packet.case_id, locked), packet.case_id
+    if kind in REQUEST_INTENTS and state.knowledge_answer is None:  # a guest's full surrender
+        return Outcome.NOT_PERMITTED, LOGIN_FOR_REQUEST_TEXT, None
     if kind is IntentKind.THIRD_PARTY:
         if case.reason_for(state) is None:  # #82: no account bound, so no case
             return Outcome.NOT_PERMITTED, NO_ACCOUNT_THIRD_PARTY_TEXT, None
@@ -331,7 +377,8 @@ def _decide(
         return _gate_refusal(state, gate) or _after_money(state, money)
     # Issue #74 (found by /code-review on PR #72): the outcome follows what was asked. Since
     # ADR 0007 typed credentials never reach the gate, so no gate result leads into these replies.
-    if kind is IntentKind.PRODUCT_QUESTION:
+    # B4 (#146): a guest's waiver or RMD question gets the documents' answer, with no case.
+    if kind is IntentKind.PRODUCT_QUESTION or kind in REQUEST_INTENTS:
         answer = state.knowledge_answer
         if answer is None:
             return Outcome.UNAVAILABLE, UNAVAILABLE_TEXT, None
@@ -401,11 +448,7 @@ def make(deps: Deps) -> NodeFn:
         outcome, text, reference = decide(state, deps.turn.failure, deps.turn.step_up, money)
         reply = Reply(text=text, outcome=outcome, reference=reference)
         answered = outcome in (Outcome.ANSWERED, Outcome.EXECUTED)  # #89: an execution answers
-        citations = (
-            state.knowledge_answer.citations
-            if answered and state.knowledge_answer is not None
-            else ()
-        )
+        citations = shown_citations(state, outcome)
         versions = state.versions.model_dump(mode="json")
         versions["documents"] = {c.doc_id: c.version for c in citations}
         deps.audit.append(
