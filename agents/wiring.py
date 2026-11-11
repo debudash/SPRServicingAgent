@@ -6,18 +6,21 @@ The only module in `agents/` that imports from `data/`; everything else depends 
 import json
 import os
 import sqlite3
-from dataclasses import replace
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, replace
 from datetime import date
 from functools import partial
 from pathlib import Path
 
 from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+from langchain_core.language_models.chat_models import BaseChatModel
 
 from agents.nodes.common import MoneyPath, Stores
 from agents.review import AgentReviewDesk
 from agents.runner import GraphDeskRunner
-from contracts.ports import LoginDeskRunner, PolicySource, ReviewDesk
+from contracts.ports import KnowledgeSearch, LoginDeskRunner, PolicySource, ReviewDesk
 from contracts.tokens import approval_token
+from contracts.tools import Role
 from data.identity import SqliteIdentityCheck
 from data.knowledge_index.index import ChromaKnowledgeSearch
 from data.knowledge_index.policy import ChromaPolicySource
@@ -83,6 +86,41 @@ def build_desk() -> tuple[LoginDeskRunner, ReviewDesk]:
         stores=stores,
     )
     return runner, review_desk(conn, stores, money)
+
+
+@dataclass(frozen=True)
+class ScratchDesk:
+    """#104: a whole desk over one throwaway database, for the behaviour demo."""
+
+    runner: GraphDeskRunner
+    review: ReviewDesk
+    conn: sqlite3.Connection
+
+
+# A fixed key for scratch databases only: their tokens never meet the real desk's ledger.
+_SCRATCH_SECRET = b"behaviour-demo-scratch-key"
+
+
+def scratch_desk(
+    db_path: Path,
+    *,
+    models: Mapping[Role, BaseChatModel],
+    search: KnowledgeSearch,
+    policy: PolicySource,
+    clock: Callable[[], date],
+    execution_enabled: bool = True,
+) -> ScratchDesk:
+    """#104: the real graph, stores, approval store, ledger, audit log and review desk over a fresh
+    database at `db_path`, with the models and searches the caller gives (scripted for the offline
+    demo). The demo logins are always seeded: the database is the demo's own."""
+    conn = open_desk_db(db_path)
+    money = money_path(conn, policy, secret=_SCRATCH_SECRET, execution_enabled=execution_enabled)
+    stores = replace(build_stores(conn), money=money)
+    seed_demo_logins(conn)
+    runner = GraphDeskRunner(
+        search=search, audit=SqliteAuditLog(conn), models=models, clock=clock, stores=stores
+    )
+    return ScratchDesk(runner=runner, review=review_desk(conn, stores, money), conn=conn)
 
 
 def review_desk(conn: sqlite3.Connection, stores: Stores, money: MoneyPath) -> ReviewDesk:
