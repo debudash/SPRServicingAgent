@@ -85,11 +85,12 @@ def test_the_desk_opens_on_the_login_page() -> None:
     runner = FakeRunner()
     at = _app(runner)
     assert not at.exception
+    # Each demo customer is shown with their name; the value behind it is the ID.
     assert at.selectbox(key="login_customer").options == [
-        "SPR-1001",
-        "SPR-1002",
-        "SPR-1003",
-        "SPR-1004",
+        "SPR-1001 · Margaret Holloway",
+        "SPR-1002 · Raymond Okafor",
+        "SPR-1003 · Linda Chu",
+        "SPR-1004 · Thomas Brennan",
     ]
     assert (
         at.text_input(key="login_password").proto.type

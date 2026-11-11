@@ -52,8 +52,14 @@ def open_desk_db(path: Path) -> sqlite3.Connection:
 
 def customer_ids() -> list[str]:
     """The starter kit's customers, for the login page's dropdown (ADR 0007)."""
+    return list(customer_names())
+
+
+def customer_names() -> dict[str, str]:
+    """Customer ID to name, so the login page says who each demo customer is. A name is not a
+    restricted field (FR-23 covers the date of birth and SSN digits)."""
     accounts = json.loads(STARTER_KIT.read_text(encoding="utf-8"))["accounts"]
-    return [str(a["customer_id"]) for a in accounts]
+    return {str(a["customer_id"]): str(a["name"]) for a in accounts}
 
 
 def build_runner() -> LoginDeskRunner:
