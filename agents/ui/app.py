@@ -6,14 +6,17 @@ turn went as it did and the customer's cases (FR-18). When a withdrawal needs th
 masked form appears outside the chat; its values go to `runner.step_up` and are never shown or
 sent as a message. The review queue is the human reviewer's page (FR-17, #146): a person reads the
 case packet and approves, rejects or asks for information; an approval executes through the same
-guarded path as the desk's own.
+guarded path as the desk's own. The behaviour demo (#104) plays nine scenarios through the real
+desk with scripted models, offline, and shows which guard decided each one.
 Tests inject fakes via `st.session_state["runner"]` and `st.session_state["review"]`.
 """
 
 from datetime import date
 
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
+from agents.demo.scenarios import SCENARIOS, ScenarioRun, run_all, run_scenario
 from agents.wiring import MissingApiKeyError, build_desk, customer_ids
 from contracts.messages import (
     CASE_DECIDABLE,
@@ -75,12 +78,19 @@ def _login_page(runner: LoginDeskRunner) -> None:
     if st.button("Continue without logging in", key="guest"):
         _open_chat(runner.start(None), "Guest (product questions only)")
         st.rerun()
-    if _review() is not None:
-        st.divider()
-        st.caption("SPR staff")
-        if st.button("Open the review queue", key="open_review"):
-            st.session_state["view"] = "review"
-            st.rerun()
+    st.divider()
+    st.caption("SPR staff")
+    left, right = st.columns(2)
+    if _review() is not None and left.button("Open the review queue", key="open_review"):
+        st.session_state["view"] = "review"
+        st.rerun()
+    _demo_button(right)
+
+
+def _demo_button(where: DeltaGenerator) -> None:
+    if where.button("Open the behaviour demo", key="open_demo"):
+        st.session_state["view"] = "demo"
+        st.rerun()
 
 
 def _sidebar(result: TurnResult | None) -> None:
@@ -269,15 +279,107 @@ def _review_page(review: ReviewDesk) -> None:
         (st.success if done else st.warning)(f"{outcome.value}: {text}")
 
 
+# ---------- #104: the behaviour demo ----------
+_TITLES = {f"{s.number}. {s.title}": s for s in SCENARIOS}
+
+
+def _demo_page() -> None:
+    st.subheader("Behaviour demo")
+    st.caption(
+        "Nine conversations played through the real desk: the graph, the SQLite stores, the "
+        "approval store, the ledger, the audit log and the review queue, each over a fresh "
+        "scratch database. Only the models are scripted (offline: no API key, same result every "
+        "time), so what you see deciding is the code guards."
+    )
+    if st.button("Back to the login page", key="close_demo"):
+        st.session_state.pop("view", None)
+        st.rerun()
+    runs: dict[int, ScenarioRun] = st.session_state.setdefault("demo_runs", {})
+    if st.button("Run all nine", key="demo_run_all"):
+        with st.spinner("Running all nine scenarios..."):
+            runs.update({r.scenario.number: r for r in run_all()})
+    if runs:
+        st.table(
+            {
+                "#": [n for n in sorted(runs)],
+                "Scenario": [runs[n].scenario.title for n in sorted(runs)],
+                "Outcome": [runs[n].outcome for n in sorted(runs)],
+                "Executed": [runs[n].executions for n in sorted(runs)],
+                "Result": ["PASS" if runs[n].passed else "FAIL" for n in sorted(runs)],
+            }
+        )
+    st.divider()
+    chosen = _TITLES[str(st.selectbox("Scenario", list(_TITLES), key="demo_scenario"))]
+    st.markdown(f"**What happens:** {chosen.story}")
+    st.info(f"**The guard:** {chosen.guard}")
+    if st.button("Run", key="demo_run", type="primary"):
+        with st.spinner("Running..."):
+            runs[chosen.number] = run_scenario(chosen)
+    run = runs.get(chosen.number)
+    if run is not None:
+        _demo_card(run)
+
+
+def _plain(text: str) -> str:
+    """Dollar amounts as text: markdown would read a pair of `$` as a formula."""
+    return text.replace("$", "\\$")
+
+
+def _demo_card(run: ScenarioRun) -> None:
+    s = run.scenario
+    with st.container(border=True):
+        verdict = "PASS" if run.passed else "FAIL"
+        who = s.customer or "a guest"
+        st.markdown(
+            f"**{s.number}. {s.title}** · {who} · outcome `{run.outcome}` · "
+            f"executed {run.executions} · **{verdict}** ({run.elapsed_ms} ms)"
+        )
+        for f in run.failures:
+            st.error(f)
+        for t in run.turns:
+            asker = "user" if t.who == "Customer" else t.who
+            with st.chat_message(asker):
+                st.markdown(_plain(t.said))
+            with st.chat_message("assistant"):
+                st.markdown(_plain(t.reply))
+                facts = [f"outcome: {t.outcome}"]
+                if t.reference:
+                    facts.append(f"reference: {t.reference}")
+                if t.citations:
+                    facts.append("cites: " + "; ".join(t.citations))
+                st.caption(" · ".join(facts))
+                if t.nodes:
+                    st.caption("nodes: " + " → ".join(t.nodes))
+                if t.steps:
+                    st.caption("tools: " + ", ".join(t.steps))
+        st.markdown("**Ledger (transactions)**")
+        if run.ledger:
+            st.table([vars(row) for row in run.ledger])
+        else:
+            st.write("No money moved.")
+        st.markdown("**Audit log**")
+        st.dataframe(
+            [
+                {"turn": a.turn, "node": a.node, "event": a.event, "details": a.payload}
+                for a in run.audit
+            ],
+            hide_index=True,
+        )
+
+
 def main() -> None:
     st.set_page_config(page_title="SPR Withdrawal & Hardship Desk")
     st.title("Withdrawal & Hardship Case Desk")
+    if st.session_state.get("view") == "demo":  # offline: needs no API key (#104)
+        _demo_page()
+        return
     runner = _runner()
     if runner is None:
         st.error(
             "ANTHROPIC_API_KEY is not set. Add it to a `.env` file in the repo root "
             "(or export it) and restart the desk."
         )
+        _demo_button(st.container())
         return
     review = _review()
     if st.session_state.get("view") == "review" and review is not None:
