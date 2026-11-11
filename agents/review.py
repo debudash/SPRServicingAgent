@@ -13,8 +13,6 @@ Code, no model: the decision is the person's, and every guard is the one B3 alre
 import logging
 import re
 import uuid
-from collections.abc import Callable
-from datetime import date
 
 from pydantic import JsonValue
 
@@ -46,6 +44,17 @@ def approver(decision: HumanDecision) -> str:
     return f"human:{decision.reviewer_id}"
 
 
+def reviewer_approval(pid: str, decision: HumanDecision, token: str | None = None) -> Approval:
+    """The reviewer's decision on a withdrawal; a token only on an approval (GR-18)."""
+    return Approval(
+        approval_id=f"appr-{uuid.uuid4().hex[:12]}",
+        proposal_id=pid,
+        approver=approver(decision),
+        decision=decision.decision,
+        token_hmac=token,
+    )
+
+
 class AgentReviewDesk:
     def __init__(
         self,
@@ -53,13 +62,11 @@ class AgentReviewDesk:
         proposals: ProposalStore,
         money: MoneyPath,
         audit: AuditLog,
-        clock: Callable[[], date],
     ) -> None:
         self._cases = cases
         self._proposals = proposals
         self._money = money
         self._audit = audit
-        self._clock = clock
 
     def queue(
         self, status: CaseStatus | None = None, customer_id: str | None = None
@@ -128,13 +135,7 @@ class AgentReviewDesk:
             return self._not_done(packet, decision, f"the withdrawal is {status.value}, not open")
         try:
             token = self._money.issue_token(pid, proposal.hash)
-            approval = Approval(
-                approval_id=f"appr-{uuid.uuid4().hex[:12]}",
-                proposal_id=pid,
-                approver=approver(decision),
-                decision=Decision.APPROVE,
-                token_hmac=token,
-            )
+            approval = reviewer_approval(pid, decision, token)
             self._money.approvals.record(approval)  # the store re-checks: confirmed, escalated
         except ValueError as refused:  # never confirmed (GR-17), or no approval secret
             logger.warning("reviewer approval refused: %s", refused)
@@ -185,14 +186,8 @@ class AgentReviewDesk:
         if status not in allowed:
             return self._not_done(packet, decision, f"the withdrawal is already {status.value}")
         if status is ProposalStatus.ESCALATED:
-            self._money.approvals.record(
-                Approval(
-                    approval_id=f"appr-{uuid.uuid4().hex[:12]}",
-                    proposal_id=pid,
-                    approver=approver(decision),
-                    decision=decision.decision,  # reject voids it; request_info leaves it
-                )
-            )
+            # Reject voids it; request_info leaves it with the person.
+            self._money.approvals.record(reviewer_approval(pid, decision))
         self._cases.decide(decision)
         self._log(packet, decision, {"proposal_id": pid})
         if decision.decision is Decision.REJECT:

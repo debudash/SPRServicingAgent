@@ -6,7 +6,6 @@ The only module in `agents/` that imports from `data/`; everything else depends 
 import json
 import os
 import sqlite3
-from collections.abc import Callable
 from dataclasses import replace
 from datetime import date
 from functools import partial
@@ -83,19 +82,16 @@ def build_desk() -> tuple[LoginDeskRunner, ReviewDesk]:
         clock=lambda: as_of,
         stores=stores,
     )
-    return runner, review_desk(conn, stores, money, lambda: as_of)
+    return runner, review_desk(conn, stores, money)
 
 
-def review_desk(
-    conn: sqlite3.Connection, stores: Stores, money: MoneyPath, clock: Callable[[], date]
-) -> ReviewDesk:
+def review_desk(conn: sqlite3.Connection, stores: Stores, money: MoneyPath) -> ReviewDesk:
     """B4 (#146): the reviewer's desk over the same stores and money path as the runner."""
     return AgentReviewDesk(
         cases=SqliteCaseStore(conn),
         proposals=stores.proposals,
         money=money,
         audit=SqliteAuditLog(conn),
-        clock=clock,
     )
 
 

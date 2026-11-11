@@ -15,7 +15,14 @@ from datetime import date
 import streamlit as st
 
 from agents.wiring import MissingApiKeyError, build_desk, customer_ids
-from contracts.messages import CASE_DECIDABLE, CasePacket, CaseStatus, Decision, HumanDecision
+from contracts.messages import (
+    CASE_DECIDABLE,
+    CasePacket,
+    CaseReason,
+    CaseStatus,
+    Decision,
+    HumanDecision,
+)
 from contracts.money import format_dollars
 from contracts.outcomes import Outcome
 from contracts.ports import LoginDeskRunner, LoginRefused, ReviewDesk, TurnResult
@@ -104,6 +111,10 @@ def _sidebar(result: TurnResult | None) -> None:
     )
 
 
+def _label(reason: CaseReason) -> str:
+    return reason.value.replace("_", " ")
+
+
 def _your_cases() -> None:
     """FR-18: the customer sees where each of their cases stands, including a reviewer's
     decision made after the conversation."""
@@ -115,7 +126,7 @@ def _your_cases() -> None:
         return
     st.sidebar.header("Your cases")
     for c in cases:
-        st.sidebar.write(f"{c.case_id}: {c.opened_for.value.replace('_', ' ')} ({c.status.value})")
+        st.sidebar.write(f"{c.case_id}: {_label(c.opened_for)} ({c.status.value})")
 
 
 def _record(customer_text: str, result: TurnResult) -> None:
@@ -222,10 +233,7 @@ def _review_page(review: ReviewDesk) -> None:
     if not cases:
         st.info("No cases here.")
     for c in cases:
-        title = (
-            f"{c.case_id} · {c.customer_id} · {c.opened_for.value.replace('_', ' ')} · "
-            f"{c.status.value}"
-        )
+        title = f"{c.case_id} · {c.customer_id} · {_label(c.opened_for)} · {c.status.value}"
         with st.expander(title, expanded=c.status in CASE_DECIDABLE):
             packet = review.case(c.case_id)
             if packet is not None:

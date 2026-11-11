@@ -30,7 +30,7 @@ from contracts.tools import Step
 from data.store.audit import SqliteAuditLog
 from data.store.cases import SqliteCaseStore
 
-from .test_money_path import AS_OF, Desk, confirm, review, withdraw
+from .test_money_path import Desk, confirm, review, withdraw
 
 ACCOUNTS = Path(__file__).parents[2] / "problemstmt" / "spr_starter_kit" / "data" / "accounts.json"
 _STORED = {a["customer_id"]: a for a in json.loads(ACCOUNTS.read_text("utf-8"))["accounts"]}
@@ -51,7 +51,6 @@ def reviewer(desk: Desk, *, enabled: bool = True) -> AgentReviewDesk:
         proposals=desk.stores.proposals,
         money=money,
         audit=desk.audit,
-        clock=lambda: AS_OF,
     )
 
 
@@ -301,3 +300,18 @@ def test_issue_152_a_hardship_is_never_told_a_waiver_may_apply(tmp_path: Path) -
     assert "nothing has been waived" in lowered  # FR-14, NG-01
     [row] = reviewer(desk).queue(customer_id="SPR-1001")
     assert row.opened_for is CaseReason.HARDSHIP
+
+
+def test_a_full_surrender_typed_with_credentials_keeps_them_out_of_the_case(
+    tmp_path: Path,
+) -> None:
+    # Review on PR #150: the issue #74 conversation now opens a case for a logged-in customer;
+    # the packet (excerpt included) never holds the typed date of birth or SSN digits (FR-23).
+    desk = request_desk(tmp_path, IntentKind.FULL_SURRENDER, [])
+    r = desk.say("1958-03-14 and 7823, surrender the whole contract please")
+    assert r.outcome is Outcome.NEEDS_HUMAN and r.reference
+    packet = reviewer(desk).case(r.reference)
+    assert packet is not None
+    dumped = packet.model_dump_json()
+    for value in ("1958-03-14", "03/14/1958", "7823"):
+        assert value not in dumped and value not in r.reply_text
