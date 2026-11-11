@@ -235,3 +235,25 @@ def test_issue_155_a_reviewer_id_outside_the_pattern_is_refused(
         reviewer(desk).decide(decide(case_id, decision, who="pat!"))
     assert SqliteCaseStore(desk.conn).status(case_id) is CaseStatus.OPEN
     assert desk.status() is ProposalStatus.ESCALATED and desk.executions() == 0
+
+
+def test_issue_154_a_case_pointing_at_another_customers_withdrawal_is_refused(
+    tmp_path: Path,
+) -> None:
+    # Issue #154, found by /code-review on PR #150: the approval trusted the packet's proposal_id.
+    desk, case_id = large_withdrawal_with_a_person(tmp_path)
+    store = SqliteCaseStore(desk.conn)
+    real = store.get(case_id)
+    assert real is not None
+    forged = real.model_copy(
+        update={
+            "case_id": "CASE-FORGED",
+            "conversation_id": "conv-other",
+            "customer_id": "SPR-1001",
+        }
+    )
+    store.open(forged)
+    result = reviewer(desk).decide(decide("CASE-FORGED", Decision.APPROVE))
+    assert result.outcome is Outcome.NOT_PERMITTED and "does not belong" in result.text
+    assert desk.executions() == 0 and desk.status() is ProposalStatus.ESCALATED
+    assert store.status("CASE-FORGED") is CaseStatus.OPEN

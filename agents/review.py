@@ -82,6 +82,15 @@ class AgentReviewDesk:
         assert packet is not None  # it has a status, so it exists
         if packet.proposal_id is None:
             return self._record_only(packet, decision)
+        # Issue #154 (found by /code-review on PR #150): the decision acted on whatever proposal
+        # the packet named, so a case pointing at another customer's withdrawal would execute it.
+        # The proposal must be this case's own: same customer, same conversation (GR-18).
+        proposal = self._proposals.get(packet.proposal_id)
+        if proposal is None or (proposal.customer_id, proposal.conversation_id) != (
+            packet.customer_id,
+            packet.conversation_id,
+        ):
+            return self._not_done(packet, decision, "the withdrawal does not belong to this case")
         if decision.decision is Decision.APPROVE:
             return self._approve(packet, packet.proposal_id, decision)
         return self._refuse_or_ask(packet, packet.proposal_id, decision)
