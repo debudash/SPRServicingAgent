@@ -244,7 +244,7 @@ hold for the bound customer (contracts 0.3.0).
 sequenceDiagram
     actor C as Customer
     participant CON as Concierge
-    participant TX as Transaction (Sonnet)
+    participant TX as Transaction (code, ADR 0008)
     participant Q as data/quote (code)
     participant CF as confirm (code)
     participant RU as rules (code)
@@ -276,13 +276,15 @@ sequenceDiagram
 sequenceDiagram
     actor C as Customer
     participant RU as rules (code)
+    participant CO as Compliance (Sonnet)
     participant CASE as Case agent (Haiku)
     participant DB as desk.db
     participant HR as human_review (interrupt)
     actor RV as Reviewer
     participant EX as execute (code)
     C->>RU: confirmed proposal for $30,000
-    RU-->>CASE: flag: over $25,000 (D-02)
+    RU-->>CO: flag: over $25,000 (D-02)
+    CO-->>CASE: escalate + reasons (cannot approve a flagged proposal, FR-11; #137)
     CASE->>DB: case with scrubbed packet · audit: case_opened
     CASE-->>C: NEEDS_HUMAN, case reference, what happens next
     CASE->>HR: graph pauses (state checkpointed)

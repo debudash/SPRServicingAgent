@@ -2,6 +2,8 @@
 
 Date: 2026-11-09 · Status: accepted · Decided by: integrator (owner) · Issue: #15
 
+Amended by ADR 0008 (2026-11-10): the Transaction step is code, so its row below is not used.
+
 ## Context
 The cost model ([COST_MODEL.md](../COST_MODEL.md)) shows that Sonnet 5.5 on every agent costs about $0.104
 per routine withdrawal without caching and $0.051 with it, both above the $0.042 target (PRD M-14), and the

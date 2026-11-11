@@ -41,3 +41,15 @@ Defects found in review are the evidence for workstream F (ADR 0002), so they al
 | #120 | 2026-11-10 | The eval harness crashed the whole run when the desk asked a guest for a step-up | review on PR #119 (spec) | 4969e59 |
 | #121 | 2026-11-10 | Wrong step-up values scripted by an eval case were neither caught nor redacted | review on PR #119 (spec) | 0a3cf00 |
 | #126 | 2026-11-10 | The live desk answered as of today, not the as-of date (D-04) | review on PR #125 (spec) | f55ad32 |
+| #130 | 2026-11-10 | A refused new amount left the old quote live, and a bare yes then confirmed it | review on PR #129 (spec) | ae1e175 |
+| #131 | 2026-11-10 | The step-up could be pending for a voided proposal after a turn failed partway | review on PR #129 (spec) | c1ec70a |
+| #136 | 2026-11-10 | A withdrawal held for a person could be asked for again and executed in the same session | review on PR #135 (spec) | e016db7 |
+| #137 | 2026-11-10 | Flagged proposals skipped the Compliance review (FR-11, BH-B4-01) | review on PR #135 (spec) | 9ccb4a4 |
+| #140 | 2026-11-10 | A repeated yes after an execution re-quoted, and a bare yes then executed a second withdrawal | money-path red team (#90) | eb384ed |
+| #144 | 2026-11-10 | The case store dropped the packet's proposal_id, so a reviewer could not bind to it | building B4 | ff34882 |
+| #147 | 2026-11-11 | A harness test failed on dates whose run ID contains 1111 | make check | 997a318 |
+| #151 | 2026-11-10 | A reject could be recorded on a withdrawal already approved or executed | review on PR #150 (spec) | d2fb6e7 |
+| #152 | 2026-11-10 | Every hardship was treated as a waiver request, implying a waiver (FR-14, NG-01) | review on PR #150 (spec) | 9a02250 |
+| #153 | 2026-11-10 | A refused reviewer approval left no audit row; the row followed the execution | review on PR #150 (spec) | 4ff5a55 |
+| #154 | 2026-11-10 | A reviewer's approval was not checked against the case's customer | review on PR #150 (spec) | 69d260e |
+| #155 | 2026-11-10 | A reviewer ID outside the approver pattern crashed reject and request info | review on PR #150 (spec) | 4b52305 |
