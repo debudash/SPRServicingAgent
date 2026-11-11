@@ -739,3 +739,14 @@ def test_issue_172_the_summary_agrees_with_the_gate_for_every_session_kind() -> 
         shown = desk.runner.account(desk.conv) is not None
         reached = Step.GET_ACCOUNT in desk.runner.send(desk.conv, "What's my balance?").steps
         assert shown == reached, name
+
+
+# ---------- #176: the desk could not say when the contract started ----------
+def test_issue_176_the_account_reply_states_the_contract_start_date() -> None:
+    """#176, found by the owner in the local desk: "when did my contract start?" got the balance."""
+    view = VIEWS["SPR-1001"].model_copy(update={"contract_start_date": date(2022, 6, 1)})
+    desk = Desk(IntentKind.ACCOUNT_INFO, views={**VIEWS, "SPR-1001": view})
+    [r] = desk.talk("SPR-1001", "When did my contract start?")
+    assert r.outcome is Outcome.ANSWERED
+    assert "Your contract started on June 1, 2022" in r.reply_text
+    assert "87,450.62" in r.reply_text  # the balance is still there

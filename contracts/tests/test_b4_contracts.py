@@ -21,7 +21,7 @@ from contracts.ports import CaseReview, ReviewDesk
 
 
 def test_version() -> None:
-    assert CONTRACTS_VERSION == "0.6.3"  # 0.6.3 (#172) adds LoginDeskRunner.account
+    assert CONTRACTS_VERSION == "0.6.4"  # 0.6.3 (#172) account(); 0.6.4 (#176) the start date
 
 
 def test_the_case_statuses_match_the_store_column() -> None:

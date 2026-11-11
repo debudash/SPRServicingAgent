@@ -261,3 +261,11 @@ def test_add_months_uses_the_last_day_for_a_missing_day(
     from data.clock import add_months
 
     assert add_months(start, months) == expected
+
+
+def test_issue_176_the_account_view_carries_the_contract_start_date(
+    conn: sqlite3.Connection,
+) -> None:
+    """#176, found by the owner in the local desk: the desk could not say when a contract began."""
+    accounts, _ = _stores(conn)
+    assert accounts.view("SPR-1001", AS_OF).contract_start_date == date(2022, 6, 1)
