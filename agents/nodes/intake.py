@@ -9,10 +9,14 @@ from typing import Any
 from agents.nodes.common import Deps, NodeFn
 from agents.prompts import load
 from contracts import CONTRACTS_VERSION
-from contracts.state import ConversationState, Versions
+from contracts.state import ConversationState, Switches, Versions
 from contracts.tools import Role
 
-PROMPT_IDS = {Role.CONCIERGE: "concierge", Role.KNOWLEDGE: "knowledge"}
+PROMPT_IDS = {
+    Role.CONCIERGE: "concierge",
+    Role.KNOWLEDGE: "knowledge",
+    Role.COMPLIANCE: "compliance",
+}
 
 
 def make(deps: Deps) -> NodeFn:
@@ -26,6 +30,10 @@ def make(deps: Deps) -> NodeFn:
         return {
             "session.gate_a_trusted": trusted,
             "as_of": deps.clock(),
+            # FR-26: no money path means nothing can execute, so the switch reads off.
+            "switches": Switches(
+                execution_enabled=bool(deps.money and deps.money.execution_enabled)
+            ),
             "versions": Versions(
                 contracts=CONTRACTS_VERSION,
                 models=models,

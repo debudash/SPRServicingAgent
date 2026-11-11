@@ -15,6 +15,8 @@ from contracts.messages import (
     CasePacket,
     CaseReason,
     IntentKind,
+    Quote,
+    ThresholdTier,
 )
 from contracts.ports import AccountStore, CaseStore, IdentityCheck
 from contracts.state import (
@@ -242,3 +244,56 @@ def test_issue_80_a_case_packet_needs_a_customer(customer_id: str | None) -> Non
             excerpt="what's my mum's balance",
             recommendation="None: no account to act on.",
         )
+
+
+# ---------- 0.6.1 (#89): a withdrawal review carries its quote ----------
+def _review_packet(
+    quote: Quote | None,
+    proposal_id: str | None = "P-1",
+    reason: CaseReason = CaseReason.WITHDRAWAL_REVIEW,
+) -> CasePacket:
+    return CasePacket(
+        case_id="CASE-1",
+        conversation_id="CV1",
+        customer_id="SPR-1001",
+        opened_for=reason,
+        request_summary="Withdrawal over $25,000.",
+        quote=quote,
+        excerpt="withdraw $30,000",
+        recommendation="Review the withdrawal.",
+        proposal_id=proposal_id,
+    )
+
+
+def test_a_withdrawal_review_carries_its_quote() -> None:
+    quote = Quote(
+        amount_cents=3_000_000,
+        free_cents=874_506,
+        excess_cents=2_125_494,
+        rate_bp=600,
+        charge_cents=127_530,
+        net_cents=2_872_470,
+        contract_year=3,
+        threshold_tier=ThresholdTier.HUMAN,
+        irs_notice=False,
+    )
+    packet = _review_packet(quote)
+    assert (packet.quote, packet.proposal_id) == (quote, "P-1")
+    assert packet.compliance_decision is None and packet.signals == frozenset()
+    with pytest.raises(ValidationError):
+        _review_packet(None)
+    with pytest.raises(ValidationError):
+        _review_packet(quote, proposal_id=None)
+
+
+@pytest.mark.parametrize("reason", [CaseReason.LOCKED, CaseReason.THIRD_PARTY])
+def test_other_cases_need_no_proposal(reason: CaseReason) -> None:
+    packet = _review_packet(None, proposal_id=None, reason=reason)
+    assert packet.quote is None and packet.proposal_id is None
+
+
+def test_open_review_is_a_rule_flag() -> None:
+    # 0.6.1 (#136): a withdrawal already with a person sends later ones in the session to one too.
+    from contracts.messages import RuleFlag, RuleFlags
+
+    assert RuleFlags(proposal_id="P-1", flags=frozenset({RuleFlag.OPEN_REVIEW})).flags
