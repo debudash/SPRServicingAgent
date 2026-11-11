@@ -380,6 +380,14 @@ class LoginDeskRunner(DeskRunner, Protocol):
         conversation ID."""
         ...
 
+    def account(self, conversation_id: str) -> AccountView | None:
+        """0.6.3 (#172): the account summary the chat shows at the top. The view only when the
+        identity gate would let this session read the account: a customer is bound, the session
+        logged in, Gate A true now (read from the record, not from the login) and the session not
+        locked (FR-02, FR-04, GR-14, ADR 0007). Otherwise None. Not a turn: no model, no audit
+        row, nothing in the transcript. `AccountView` holds no restricted field (PG-04)."""
+        ...
+
     def step_up(self, conversation_id: str, dob: date, last4: str) -> TurnResult:
         """The step-up form's values, straight to the identity gate: never turn text, never in
         the transcript, trace or audit. Runs as a turn (pass, fail or lock), then continues the

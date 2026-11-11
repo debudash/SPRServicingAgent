@@ -17,6 +17,7 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from agents.demo.scenarios import SCENARIOS, ScenarioRun, run_all, run_scenario
+from agents.nodes.respond import CONTACT
 from agents.wiring import MissingApiKeyError, build_desk, customer_names
 from contracts.messages import (
     CASE_DECIDABLE,
@@ -178,7 +179,33 @@ def _step_up_form(runner: LoginDeskRunner) -> None:
             st.rerun()
 
 
+def _account_header(runner: LoginDeskRunner) -> None:
+    """#172: who is logged in and, when the desk allows it, their account at a glance. The figures
+    come from the runner, which applies the identity gate's rule (contracts 0.6.3); the page never
+    reads the account itself. Re-read on every rerun, so a withdrawal shows at once."""
+    customer = st.session_state.get("customer_id")
+    if customer is None:
+        st.markdown("**Guest** · product questions only")
+        return
+    st.markdown(f"**{customer_names().get(customer, customer)}** · {customer}")
+    view = runner.account(st.session_state["conversation_id"])
+    if view is None:
+        st.caption(
+            f"Account details are not available in this chat. Please call SPR Financials at "
+            f"{CONTACT}."
+        )
+        return
+    st.caption(f"Account {view.account_status.value} · as of the desk's business date")
+    cols = st.columns(4)
+    cols[0].metric("Balance", format_dollars(view.balance_cents))
+    cols[1].metric("Contract year", str(view.contract_year))
+    cols[2].metric("Free withdrawal left", format_dollars(view.allowance_remaining_cents))
+    cols[3].metric("Withdrawals this year", str(view.withdrawals_this_year))
+    st.divider()
+
+
 def _chat(runner: LoginDeskRunner) -> None:
+    _account_header(runner)
     for m in st.session_state["messages"]:
         with st.chat_message(m["role"]):
             st.write(m["text"])

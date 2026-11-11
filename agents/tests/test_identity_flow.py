@@ -668,3 +668,39 @@ def test_a_step_up_on_a_session_that_never_logged_in_is_told_to_log_in() -> None
     r = desk.runner.step_up(desk.conv, *RIGHT)
     assert r.outcome is Outcome.NOT_PERMITTED and "log in" in r.reply_text.lower()
     assert desk.identity.checks == 0
+
+
+# ---------- #172: the account summary at the top of the chat (contracts 0.6.3) ----------
+def test_issue_172_a_logged_in_trusted_customer_gets_their_account_summary() -> None:
+    desk = Desk()
+    desk.login("SPR-1001")
+    assert desk.runner.account(desk.conv) == VIEWS["SPR-1001"]  # before any turn: Gate A read live
+
+
+def test_issue_172_an_untrusted_account_gets_no_summary() -> None:
+    desk = Desk()
+    desk.login("SPR-1002")  # GR-14: the same refusal the gate gives a balance question
+    assert desk.runner.account(desk.conv) is None
+    assert desk.accounts.viewed == []
+
+
+def test_issue_172_a_guest_or_a_session_without_a_login_gets_no_summary() -> None:
+    desk = Desk()
+    assert desk.runner.account(desk.runner.start(None)) is None
+    assert desk.runner.account(desk.runner.start("SPR-1001")) is None  # bound is not logged in
+    assert desk.accounts.viewed == []
+
+
+def test_issue_172_a_locked_session_gets_no_summary() -> None:
+    desk = Desk(IntentKind.ACCOUNT_INFO)
+    desk.login("SPR-1001")
+    desk.step_ups(*WRONG)
+    assert desk.state().session.locked
+    assert desk.runner.account(desk.conv) is None  # FR-04: the account is shut for the session
+
+
+def test_issue_172_trust_withdrawn_after_login_hides_the_summary() -> None:
+    desk = Desk()
+    desk.login("SPR-1001")
+    desk.accounts.trusted.discard("SPR-1001")  # Gate A is read live, not from the login
+    assert desk.runner.account(desk.conv) is None
