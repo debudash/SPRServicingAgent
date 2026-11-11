@@ -46,6 +46,23 @@ _WHY: dict[CaseReason, tuple[str, str]] = {
         "A withdrawal needs a person's review: see the rule flags and Compliance's decision.",
         "Review the proposal and its quote, then approve or reject it.",
     ),
+    # 0.6.2 (B4): requests only a person decides; no money moves through the desk for these.
+    CaseReason.WAIVER_REQUEST: (
+        "The customer asked for a surrender-charge waiver (terminal illness, death benefit, RMD).",
+        "Request the documentation the waiver needs; only a person grants a waiver (D-03, NG-01).",
+    ),
+    CaseReason.HARDSHIP: (
+        "The customer described a hardship; there is no general hardship waiver.",
+        "Contact the customer to discuss their options; do not imply a waiver (FR-14).",
+    ),
+    CaseReason.RMD: (
+        "The customer asked about a required minimum distribution.",
+        "Confirm the RMD amount and its charge treatment with the customer (FR-15).",
+    ),
+    CaseReason.FULL_SURRENDER: (
+        "The customer asked to surrender the whole contract.",
+        "Contact the customer before any full surrender; the desk never processes one (NG-07).",
+    ),
 }
 
 
