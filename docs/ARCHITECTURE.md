@@ -385,6 +385,8 @@ flowchart LR
 | `DESK_AS_OF` | `.env`, default `2024-12-01` | The business clock (D-04) |
 | `APPROVAL_SECRET` | `.env` | HMAC key for approval tokens; generated per environment |
 | `EXECUTION_ENABLED` | `.env`, default `true` | Kill switch for execution (FR-26) |
+| `DESK_VAR_DIR` | `.env`, default `var` (compose sets `/app/var`) | Where `desk.db`, checkpoints and the Chroma index live |
+| `DESK_DEMO_LOGINS` | `.env`, default `true` | Seeds the demo passwords (ADR 0007); anything but `true` turns it off |
 | `MODEL_MAP` | `agents/config/models.yaml` | Model and effort per role (ADR 0004) |
 | Host port | 8530 → container 8501 | Chosen to avoid the other local stacks |
 
