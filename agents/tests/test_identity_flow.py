@@ -266,8 +266,11 @@ def test_a_passed_step_up_is_recorded_and_its_values_kept_nowhere() -> None:
     desk = Desk()
     desk.login("SPR-1001")
     [r] = desk.step_ups(RIGHT)
-    assert r.outcome is Outcome.ANSWERED and r.steps == (Step.VERIFY_IDENTITY,)
-    assert r.nodes == (Node.INTAKE, Node.IDENTITY_GATE, Node.RESPOND)  # no model sees it
+    # #89: a pass continues the confirmed withdrawal. This desk has no money path, so the kill
+    # switch reads off and the withdrawal goes to a person (FR-26). No model node runs.
+    assert r.steps == (Step.VERIFY_IDENTITY, Step.CREATE_CASE)
+    assert r.nodes == (Node.INTAKE, Node.IDENTITY_GATE, Node.RULES, Node.CASE, Node.RESPOND)
+    assert r.outcome is Outcome.NEEDS_HUMAN
     assert desk.state().session.gate_b_passed and not r.step_up_required
     assert AuditEvent.GATE_B_PASSED in desk.events()
     step = TraceEvent(turn=1, node=Node.IDENTITY_GATE, step=Step.VERIFY_IDENTITY)

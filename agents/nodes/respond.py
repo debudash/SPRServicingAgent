@@ -12,6 +12,7 @@ from agents.nodes import case
 from agents.nodes.common import ACCOUNT_INTENTS, MONEY_INTENTS, Deps, NodeFn, is_live
 from contracts.messages import (
     AccountView,
+    CaseReason,
     IntentKind,
     Quote,
     QuoteRefusalReason,
@@ -177,13 +178,39 @@ def _clear_yes_text(amount_cents: int) -> str:
     )
 
 
-def _confirmed_text(amount_cents: int) -> str:
-    """The step-up already passed this session: the yes is recorded, and #89 (approval and
-    execution) takes it from here. Until then nothing moves, and the customer is told so."""
+def _executed_text(quote: Quote, reference: str) -> str:
+    """GR-10: said only when the ledger returned an Execution (#89)."""
     return (
-        f"Thank you, your yes for {format_dollars(amount_cents)} is recorded. Completing "
-        "withdrawals through the desk isn't available yet, so nothing has been withdrawn."
+        f"Done. Your withdrawal of {format_dollars(quote.amount_cents)} is complete. You'll "
+        f"receive {format_dollars(quote.net_cents)} after a surrender charge of "
+        f"{format_dollars(quote.charge_cents)}. Your reference is {reference}."
     )
+
+
+def _review_text(case_id: str) -> str:
+    """#89: a person reviews this withdrawal; nothing has moved (GR-19, FR-26)."""
+    return (
+        "This withdrawal needs a review by a member of our team before it can be paid, so "
+        f"nothing has been withdrawn yet. I've opened case {case_id}, and the team will contact "
+        "you."
+    )
+
+
+def _money_result(
+    state: ConversationState, money: MoneyFacts, show_quote: bool = True
+) -> tuple[Outcome, str, str | None] | None:
+    """#89: the withdrawal executed this turn, or went to a person; None when neither."""
+    proposal, done, packet = state.proposal, state.execution, state.case_packet
+    if done is not None and proposal is not None and done.proposal_id == proposal.proposal_id:
+        reference = done.transaction_id
+        return Outcome.EXECUTED, _executed_text(proposal.quote, reference), reference
+    if packet is not None and packet.opened_for is CaseReason.WITHDRAWAL_REVIEW:
+        text = _review_text(packet.case_id)
+        quoted_now = proposal is not None and proposal.quoted_turn == state.turn
+        if show_quote and proposal is not None and quoted_now:  # BH-B3-05: the quote first
+            text = quote_text(proposal.quote, money.basis) + "\n" + text
+        return Outcome.NEEDS_HUMAN, text, packet.case_id
+    return None
 
 
 def _failed_text(attempts: int) -> str:
@@ -226,15 +253,15 @@ def decide(
 ) -> tuple[Outcome, str, str | None]:
     """The turn's outcome, the reply text and the reference (a case ID) shown to the customer."""
     if step_up:
-        return _after_step_up(state, failure)
+        return _after_step_up(state, failure, money)
     outcome, text, reference = _decide(state, failure, money)
     return outcome, _first_turn_notice(state) + text, reference
 
 
 def _after_step_up(
-    state: ConversationState, failure: str | None
+    state: ConversationState, failure: str | None, money: MoneyFacts = NO_MONEY
 ) -> tuple[Outcome, str, str | None]:
-    """A step-up turn (ADR 0007): the form's result. #88/#89 continue the withdrawal on a pass."""
+    """A step-up turn (ADR 0007): the form's result. On a pass, #89 continues the withdrawal."""
     gate = state.gate
     if gate is GateResult.LOCKED_NOW:
         packet = state.case_packet
@@ -244,7 +271,9 @@ def _after_step_up(
     if failure is not None:
         return Outcome.UNAVAILABLE, UNAVAILABLE_TEXT, None
     if gate is GateResult.PASSED:
-        return Outcome.ANSWERED, STEP_UP_PASSED_TEXT, None
+        # A step-up turn never shows a quote: the quote came on an earlier turn (GR-17).
+        result = _money_result(state, money, show_quote=False)
+        return result or (Outcome.ANSWERED, STEP_UP_PASSED_TEXT, None)
     if gate is GateResult.FAILED:
         return Outcome.NOT_PERMITTED, _failed_text(state.session.failed_attempts), None
     refusals: dict[GateResult | None, str] = {
@@ -279,6 +308,9 @@ def _decide(
     if failure is not None or state.intent is None:
         return Outcome.UNAVAILABLE, UNAVAILABLE_TEXT, None
     kind = state.intent.kind
+    result = _money_result(state, money)  # #89: executed, or with a person
+    if result is not None:
+        return result
     packet = state.case_packet
     if packet is not None:
         locked = state.gate is GateResult.LOCKED_NOW
@@ -341,8 +373,8 @@ def _after_money(state: ConversationState, money: MoneyFacts) -> tuple[Outcome, 
     if proposal is not None and money.live:
         amount = proposal.quote.amount_cents
         if yes is not None and yes.proposal_id == proposal.proposal_id:
-            if state.session.gate_b_passed:
-                return Outcome.NOT_PERMITTED, _confirmed_text(amount), None
+            if state.session.gate_b_passed:  # #89: confirmed and checked, waiting for a clear yes
+                return Outcome.ANSWERED, _clear_yes_text(amount), None
             return Outcome.ANSWERED, STEP_UP_NEEDED_TEXT, None
         asks_without_amount = intent.kind is IntentKind.WITHDRAWAL and intent.amount_cents is None
         if not asks_without_amount:  # an answer to the live quote, but not a clear yes
@@ -368,7 +400,7 @@ def make(deps: Deps) -> NodeFn:
         money = MoneyFacts(deps.turn.quote_refusal, deps.turn.quote_basis, live)
         outcome, text, reference = decide(state, deps.turn.failure, deps.turn.step_up, money)
         reply = Reply(text=text, outcome=outcome, reference=reference)
-        answered = outcome is Outcome.ANSWERED
+        answered = outcome in (Outcome.ANSWERED, Outcome.EXECUTED)  # #89: an execution answers
         citations = (
             state.knowledge_answer.citations
             if answered and state.knowledge_answer is not None
