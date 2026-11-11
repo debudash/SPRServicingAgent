@@ -103,7 +103,17 @@ def reason_for(state: ConversationState) -> CaseReason | None:
         return CaseReason.THIRD_PARTY
     if needs_review(state):
         return CaseReason.WITHDRAWAL_REVIEW
+    # B4 (#146): a person decides waivers (D-03, NG-01), RMDs (FR-15) and full surrenders (NG-07).
+    if state.intent is not None:
+        return _REQUEST_REASONS.get(state.intent.kind)
     return None
+
+
+_REQUEST_REASONS = {
+    IntentKind.HARDSHIP_WAIVER: CaseReason.WAIVER_REQUEST,
+    IntentKind.RMD: CaseReason.RMD,
+    IntentKind.FULL_SURRENDER: CaseReason.FULL_SURRENDER,
+}
 
 
 def make(deps: Deps) -> NodeFn:
