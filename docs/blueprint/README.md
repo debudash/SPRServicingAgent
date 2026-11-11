@@ -1,6 +1,6 @@
 # Blueprint: SPR Servicing Desk (v2)
 
-The design every lane builds against, **updated 2026-11-11 to match the code on `main`** (contracts 0.6.2,
+The design every lane builds against, **updated 2026-11-11 to match the code on `main`** (contracts 0.6.3,
 B1 to B4 built). Requirement IDs refer to [PRD.md](../PRD.md), rules to [GROUNDING_RULES.md](../GROUNDING_RULES.md),
 bullets to [PLAN.md](../PLAN.md). Decisions: [ADR 0003](../decisions/0003-langgraph-code-routed-graph.md)
 (framework and topology), [ADR 0004](../decisions/0004-model-per-role.md) (models),
@@ -127,7 +127,10 @@ Outcomes (`contracts/outcomes.py`): `ANSWERED`, `EXECUTED`, `NO_SOURCE`, `NOT_PE
   passwords are seeded when `DESK_DEMO_LOGINS=true`.
 - **Gate A** is static account trust: `identity_verified` on the record, re-read every turn. An untrusted
   account is refused with the contact number and never asked for credentials (FR-03, GR-14).
-- **Logged in + Gate A** is enough to read the account (`LOGGED_IN`).
+- **Logged in + Gate A** is enough to read the account (`LOGGED_IN`). The chat shows the account summary
+  at the top (balance, contract year, free withdrawal left, withdrawals this year) through
+  `LoginDeskRunner.account` (contracts 0.6.3, #172), which applies the same rule in code; a test pins the
+  two together. An untrusted or locked account shows the name and the contact number, no figures.
 - **Gate B** is the step-up before money moves: a masked form asks for the date of birth and the last four SSN
   digits after the customer says yes to a quote. Only `identity_gate` checks them, through `data/identity.py`.
   Credentials typed into the chat are masked and never checked.
@@ -201,7 +204,7 @@ conversation (`agents/llm.py`).
 
 | Service | In `compose.yaml` | Port (host) |
 |---|---|---|
-| `desk`: Streamlit login, chat, step-up form, review queue and behaviour demo | yes | 8530 |
+| `desk`: SPR Servicing Desk in Streamlit: login, chat with the account summary, step-up form, review queue and behaviour demo | yes | 8530 |
 | `checks`: the CI check suite in the same image | yes | none |
 
 ```
