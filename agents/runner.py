@@ -25,7 +25,7 @@ from agents.nodes.common import Deps, Stores, TurnContext, shown_citations
 from agents.nodes.respond import NO_STEP_UP_TEXT, STEP_UP_INCOMPLETE_TEXT, UNAVAILABLE_TEXT
 from agents.tools.registry import ToolRegistry
 from contracts import CONTRACTS_VERSION
-from contracts.messages import ProposalStatus
+from contracts.messages import AccountView, ProposalStatus
 from contracts.outcomes import Outcome
 from contracts.ports import AuditEvent, AuditLog, KnowledgeSearch, LoginRefused, TurnResult
 from contracts.state import (
@@ -162,6 +162,18 @@ class GraphDeskRunner:
         # credentials are never checked (the step-up form is the only way in).
         text, _ = capture(text, prior.as_of, _credential_in_play(prior))
         return self._turn(prior, text, TurnContext(started=started))
+
+    def account(self, conversation_id: str) -> AccountView | None:
+        """The chat's account summary (#172): the identity gate's rule for an account read,
+        checked here in code. Gate A is read from the record now: a fresh login has had no turn
+        for intake to copy it into the session, and trust can be withdrawn after the login."""
+        state = self._prior(conversation_id)
+        s = state.session
+        if s.customer_id is None or not s.authenticated or s.locked:
+            return None
+        if not self._stores.accounts.gate_a(s.customer_id):  # GR-14: nothing for untrusted
+            return None
+        return self._stores.accounts.view(s.customer_id, state.as_of)  # the business clock, D-04
 
     def step_up(self, conversation_id: str, dob: date, last4: str) -> TurnResult:
         """The step-up form (ADR 0007). With none pending it counts nothing (NOT_PERMITTED)."""

@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from contracts.messages import Citation
+from contracts.messages import AccountView, Citation
 from contracts.outcomes import Outcome
 from contracts.ports import LoginRefused, TurnResult
 from contracts.tools import Step
@@ -45,6 +45,9 @@ class FakeRunner:
     def send(self, conversation_id: str, text: str) -> TurnResult:
         self.sent.append((conversation_id, text))
         return self.replies.pop(0) if self.replies else turn()
+
+    def account(self, conversation_id: str) -> AccountView | None:
+        return None  # 0.6.3: the chat's header; the harness scores turns only
 
     def step_up(self, conversation_id: str, dob: date, last4: str) -> TurnResult:
         self.step_ups.append((conversation_id, dob, last4))

@@ -27,6 +27,9 @@ review, which always names its proposal and carries its quote; three optional `C
 `list_cases`, `status`, `decide`); `CaseSummary` and `ReviewResult`; the `ReviewDesk` port, through
 which a human approval executes by the same path as B3; and four case reasons for requests only a
 person decides (`WAIVER_REQUEST`, `HARDSHIP`, `RMD`, `FULL_SURRENDER`).
+
+0.6.3 (#172) is additive: `LoginDeskRunner.account`, the account summary at the top of the chat,
+returned only when the identity gate would let the session read the account.
 """
 
-CONTRACTS_VERSION = "0.6.2"
+CONTRACTS_VERSION = "0.6.3"

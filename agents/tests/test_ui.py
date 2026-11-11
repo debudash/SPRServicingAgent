@@ -8,6 +8,9 @@ from streamlit.testing.v1 import AppTest
 
 from agents.wiring import MissingApiKeyError, require_api_key
 from contracts.messages import (
+    AccountStatus,
+    AccountView,
+    AgeBand,
     CasePacket,
     CaseReason,
     CaseStatus,
@@ -34,6 +37,7 @@ class FakeRunner:
         self.logins: list[str] = []
         self.step_ups: list[tuple[str, date, str]] = []
         self.step_up_required = step_up_required
+        self.views: dict[str, AccountView] = {}  # #172: what account() returns, per customer
 
     def start(self, customer_id: str | None) -> str:
         self.started.append(customer_id)
@@ -57,6 +61,9 @@ class FakeRunner:
             usage=Usage(cost_micros=12_500),
             step_up_required=self.step_up_required,
         )
+
+    def account(self, conversation_id: str) -> AccountView | None:
+        return self.views.get(conversation_id.removeprefix("conv-"))
 
     def step_up(self, conversation_id: str, dob: date, last4: str) -> TurnResult:
         self.step_ups.append((conversation_id, dob, last4))
@@ -292,3 +299,64 @@ def test_the_customer_sees_their_cases() -> None:  # FR-18
     assert any("CASE-1" in m.value for m in at.sidebar.markdown) or any(
         "CASE-1" in str(t.value) for t in at.sidebar.text
     )
+
+
+# ---------- #172: the account summary at the top of the chat ----------
+MARGARET = AccountView(
+    customer_id="SPR-1001",
+    account_status=AccountStatus.ACTIVE,
+    contract_year=4,
+    age_band=AgeBand.FROM_59_5_TO_79,
+    balance_cents=8_745_062,
+    allowance_remaining_cents=874_506,
+    withdrawals_this_year=0,
+)
+
+
+def test_issue_172_a_logged_in_customer_sees_their_account_summary_on_top() -> None:
+    runner = FakeRunner()
+    runner.views["SPR-1001"] = MARGARET
+    at = _app(runner)
+    _log_in(at, "SPR-1001", "right")
+    assert not at.exception
+    shown = {m.label: m.value for m in at.metric}
+    assert shown == {
+        "Balance": "$87,450.62",
+        "Contract year": "4",
+        "Free withdrawal left": "$8,745.06",
+        "Withdrawals this year": "0",
+    }
+    header = " ".join(m.value for m in at.markdown)
+    assert "Margaret Holloway" in header and "SPR-1001" in header
+    assert "Account active" in " ".join(c.value for c in at.caption)
+
+
+def test_issue_172_the_summary_is_re_read_after_a_withdrawal() -> None:
+    runner = FakeRunner()
+    runner.views["SPR-1001"] = MARGARET
+    at = _app(runner)
+    _log_in(at, "SPR-1001", "right")
+    runner.views["SPR-1001"] = MARGARET.model_copy(
+        update={"balance_cents": 7_745_062, "withdrawals_this_year": 1}
+    )
+    at.chat_input[0].set_value("Yes, go ahead").run()
+    shown = {m.label: m.value for m in at.metric}
+    assert shown["Balance"] == "$77,450.62" and shown["Withdrawals this year"] == "1"
+
+
+def test_issue_172_no_figures_when_the_desk_returns_no_account() -> None:
+    runner = FakeRunner()  # no view: an untrusted or locked account (the runner decides)
+    at = _app(runner)
+    _log_in(at, "SPR-1002", "right")
+    assert not at.exception
+    assert len(at.metric) == 0
+    assert "Raymond Okafor" in " ".join(m.value for m in at.markdown)
+    assert "not available" in " ".join(c.value for c in at.caption)
+
+
+def test_issue_172_a_guest_sees_no_account_summary() -> None:
+    at = _app(FakeRunner())
+    at.button(key="guest").click().run()
+    assert not at.exception
+    assert len(at.metric) == 0
+    assert "Guest** (product questions only)" in " ".join(m.value for m in at.markdown)
