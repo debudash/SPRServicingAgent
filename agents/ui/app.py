@@ -17,7 +17,7 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from agents.demo.scenarios import SCENARIOS, ScenarioRun, run_all, run_scenario
-from agents.wiring import MissingApiKeyError, build_desk, customer_ids
+from agents.wiring import MissingApiKeyError, build_desk, customer_names
 from contracts.messages import (
     CASE_DECIDABLE,
     CasePacket,
@@ -64,7 +64,13 @@ def _open_chat(conversation_id: str, who: str) -> None:
 def _login_page(runner: LoginDeskRunner) -> None:
     st.subheader("Log in")
     st.caption("Simulated upstream login (demo passwords are in data/README.md).")
-    customer = st.selectbox("Customer", customer_ids(), key="login_customer")
+    names = customer_names()
+    customer = st.selectbox(
+        "Customer",
+        list(names),
+        format_func=lambda c: f"{c} · {names[c]}",
+        key="login_customer",
+    )
     password = st.text_input("Password", type="password", key="login_password")
     if st.button("Log in", key="login_submit", type="primary"):
         result = runner.login(str(customer), password)

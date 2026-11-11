@@ -11,12 +11,13 @@ answer live in the linked documents; this page only points at them.
 3. Start from a clean desk, so the review queue holds only today's cases:
    `docker compose stop desk`, delete `var/desk.db` and `var/checkpoints.db`, then `docker compose up -d desk`.
    The starter-kit accounts and the demo logins are reseeded on start; the knowledge index in `var/chroma` stays.
-4. Run the offline scenarios once: `docker compose exec -T desk python -m agents.demo`. All nine say PASS.
+4. Load every page as Streamlit runs it: `make smoke` prints `page smoke: PASS`. Then run the offline scenarios
+   once: `docker compose exec -T desk python -m agents.demo`. All nine say PASS.
    This is the fallback if the API is slow or down: the same page is in the app ("Open the behaviour demo").
 5. Have the blueprint open in a second tab: `docs/blueprint/blueprint.html`.
 
-Demo logins (simulated upstream login, ADR 0007): SPR-1001 `margaret-demo`, SPR-1002 `raymond-demo`,
-SPR-1003 `linda-demo`, SPR-1004 `thomas-demo`. The step-up form asks for the date of birth and the last four
+Demo logins (simulated upstream login, ADR 0007): SPR-1001 Margaret Holloway `margaret-demo`, SPR-1002 Raymond
+Okafor `raymond-demo` (not identity-verified), SPR-1003 Linda Chu `linda-demo`, SPR-1004 Thomas Brennan `thomas-demo`. The step-up form asks for the date of birth and the last four
 SSN digits from the starter kit's `accounts.json`; never type them into the chat.
 
 ## 2. The story in one sentence
