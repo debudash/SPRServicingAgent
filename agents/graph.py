@@ -116,10 +116,16 @@ def route_money(state: ConversationState, proposals: ProposalStore) -> str:
     is never a yes). Anything else is an answer to the live quote, which confirm judges."""
     intent, proposal = state.intent, state.proposal
     amount = intent.amount_cents if intent is not None else None
+    live = proposal is not None and is_live(proposals, proposal)
+    # Issue #140 (found by the money-path red team, #90): any stated amount with no live quote was
+    # quoted, so "yes, go ahead with $5,000" repeated after that withdrawal executed became a new
+    # quote, and a bare yes then executed a second one. A yes answers a quote: it replaces only a
+    # live quote for another amount (BH-B3-02). With none live it quotes nothing, and respond says
+    # no quote is waiting. A new withdrawal is asked for as one.
+    if intent is not None and intent.kind is IntentKind.CONFIRM and not live:
+        return Node.CONFIRM.value
     if amount is not None and (
-        proposal is None
-        or not is_live(proposals, proposal)
-        or amount != proposal.quote.amount_cents
+        proposal is None or not live or amount != proposal.quote.amount_cents
     ):
         return Node.TRANSACTION.value
     return Node.CONFIRM.value
