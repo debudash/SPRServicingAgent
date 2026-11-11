@@ -172,7 +172,7 @@ def request_desk(tmp_path: Path, kind: IntentKind, drafts: list[object]) -> Desk
 @pytest.mark.parametrize(
     ("kind", "reason", "looked_up"),
     [
-        (IntentKind.HARDSHIP_WAIVER, CaseReason.WAIVER_REQUEST, True),  # FR-13, G-B4-03
+        (IntentKind.HARDSHIP_WAIVER, CaseReason.HARDSHIP, True),  # FR-13, FR-14, #152
         (IntentKind.RMD, CaseReason.RMD, True),  # FR-15, G-B4-05
         (IntentKind.FULL_SURRENDER, CaseReason.FULL_SURRENDER, False),  # NG-07, G-B4-04
     ],
@@ -188,7 +188,7 @@ def test_a_request_opens_a_case_and_moves_no_money(
     assert desk.executions() == 0
     if looked_up:
         assert r.citations == (FAQ,) and "physician" in r.reply_text
-    assert "waived" not in r.reply_text.replace("nothing has been waived", "")  # NG-01
+    assert "waiver applies" not in r.reply_text.lower()  # NG-01
     desk_review = reviewer(desk)
     [row] = desk_review.queue(customer_id="SPR-1001")
     assert row.opened_for is reason and row.proposal_id is None
@@ -282,3 +282,22 @@ def test_issue_153_every_reviewer_decision_is_audited_before_the_ledger(
     else:
         refused = [p for e, p in _audit_rows(desk) if e == "human_decided" and "refused" in p]
         assert refused and "executed" not in events
+
+
+def test_issue_152_a_hardship_is_never_told_a_waiver_may_apply(tmp_path: Path) -> None:
+    # Issue #152, found by /code-review on PR #150: every hardship opened a waiver request and was
+    # told a person decides "a surrender-charge waiver" and will ask for its documentation.
+    no_waiver = KnowledgeDraft(
+        found=True,
+        text="There is no general hardship waiver. Waivers apply only as the FAQ lists.",
+        citations=(FAQ,),
+    )
+    desk = request_desk(tmp_path, IntentKind.HARDSHIP_WAIVER, [no_waiver])
+    r = desk.say("I lost my job. Can you waive the surrender fee?")
+    assert r.outcome is Outcome.NEEDS_HUMAN and r.reference
+    lowered = r.reply_text.lower()
+    assert "decide a surrender-charge waiver" not in lowered
+    assert "documentation it needs" not in lowered
+    assert "nothing has been waived" in lowered  # FR-14, NG-01
+    [row] = reviewer(desk).queue(customer_id="SPR-1001")
+    assert row.opened_for is CaseReason.HARDSHIP

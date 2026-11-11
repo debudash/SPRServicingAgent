@@ -244,10 +244,12 @@ LOGIN_FOR_REQUEST_TEXT = (
     f"Please log in and ask again, or call SPR Financials at {CONTACT}."
 )
 _REQUEST_CASE_TEXT = {
+    # Issue #152: never implies a waiver may apply (FR-14, NG-01); the documents' answer before
+    # this says which waivers exist and what they need.
     IntentKind.HARDSHIP_WAIVER: (
-        "Only a person on our team can decide a surrender-charge waiver, so nothing has been "
-        "waived or withdrawn. I've opened case {case_id}; they'll contact you about the "
-        "documentation it needs."
+        "There is no general hardship waiver: surrender charges are waived only in the cases our "
+        "documents list. I've opened case {case_id} so a person on our team can go through your "
+        "situation and options with you. Nothing has been waived or withdrawn."
     ),
     IntentKind.RMD: (
         "I've opened case {case_id} so a person on our team can confirm your required minimum "

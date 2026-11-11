@@ -109,8 +109,12 @@ def reason_for(state: ConversationState) -> CaseReason | None:
     return None
 
 
+# Issue #152 (found by /code-review on PR #150): every hardship opened a waiver request, though
+# the Concierge has one intent for terminal illness and any other hardship, and FR-14 says there
+# is no general hardship waiver. It opens a hardship case; the documents' answer says which
+# waivers exist (FR-13), and only a person decides (D-03, NG-01).
 _REQUEST_REASONS = {
-    IntentKind.HARDSHIP_WAIVER: CaseReason.WAIVER_REQUEST,
+    IntentKind.HARDSHIP_WAIVER: CaseReason.HARDSHIP,
     IntentKind.RMD: CaseReason.RMD,
     IntentKind.FULL_SURRENDER: CaseReason.FULL_SURRENDER,
 }
