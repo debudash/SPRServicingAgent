@@ -374,8 +374,8 @@ def _demo_card(run: ScenarioRun) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="SPR Withdrawal & Hardship Desk")
-    st.title("Withdrawal & Hardship Case Desk")
+    st.set_page_config(page_title="SPR Servicing Desk")
+    st.title("SPR Servicing Desk")
     if st.session_state.get("view") == "demo":  # offline: needs no API key (#104)
         _demo_page()
         return
