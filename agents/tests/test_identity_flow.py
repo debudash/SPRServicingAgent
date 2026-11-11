@@ -739,3 +739,14 @@ def test_issue_172_the_summary_agrees_with_the_gate_for_every_session_kind() -> 
         shown = desk.runner.account(desk.conv) is not None
         reached = Step.GET_ACCOUNT in desk.runner.send(desk.conv, "What's my balance?").steps
         assert shown == reached, name
+
+
+# ---------- #177: a greeting got a NOT_PERMITTED refusal ----------
+def test_issue_177_a_greeting_gets_a_friendly_answer_not_a_refusal() -> None:
+    """#177, found by the owner in the local desk: "hi" was refused as NOT_PERMITTED."""
+    for customer in ("SPR-1001", None):  # logged in, and a guest
+        desk = Desk(IntentKind.OTHER)
+        [r] = desk.talk(customer, "hi")
+        assert r.outcome is Outcome.ANSWERED, customer
+        assert r.reply_text.startswith("Hello"), r.reply_text
+        assert "isn't available" not in r.reply_text
