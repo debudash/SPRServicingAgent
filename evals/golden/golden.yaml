@@ -294,9 +294,10 @@ cases:
       not_tools: [execute]
       executed: false
     note: >-
-      Retired 2026-11-11 (owner decision): a case opened on the quote turn, before the customer's yes,
-      could never be approved by a reviewer (no approval before the confirmation, GR-17, #98). BH-B4-03 now
-      pins it over two turns. (It said: "Over $25,000, so a human decides even though the quote is shown.")
+      Retired 2026-11-10 (owner decision, #158): D-02 still applies, but this one-turn shape no longer
+      matches the spec. A case opened on the quote turn, before the customer's confirmation, could never be
+      approved by a reviewer (FR-08; the approval store refuses it, #98). BH-B4-03 now pins D-02 over two
+      turns. (It said: "Over $25,000, so a human decides even though the quote is shown.")
 
   - id: G-B4-02
     bullet: B4
@@ -312,8 +313,8 @@ cases:
       not_tools: [execute]
       executed: false
     note: >-
-      Retired 2026-11-11 (owner decision), for the same reason as G-B4-01. BH-B4-04 now pins it over two
-      turns. (It said: "Under $25,000 but over 50% of the $11,200 balance.")
+      Retired 2026-11-10 (owner decision, #158), for the same reason as G-B4-01. BH-B4-04 now pins it over
+      two turns. (It said: "Under $25,000 but over 50% of the $11,200 balance.")
 
   - id: G-B4-03
     bullet: B4

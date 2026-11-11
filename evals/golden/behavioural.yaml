@@ -229,12 +229,15 @@ cases:
     expect:
       final_outcome: NEEDS_HUMAN
       numbers: ["270.00", "29,730.00"]
-      tools: [quote, create_case]
+      tools: [quote, compliance_review, create_case]
+      order: [quote, compliance_review, create_case]
       not_tools: [execute]
       executed: false
     note: >-
-      Over $25,000 (D-02): the quote is shown, and after the customer's yes and the step-up a person decides.
-      Replaces G-B4-01 (owner decision 2026-11-11), which opened the case before the yes.
+      Over $25,000 (D-02): the quote is shown, and only after the customer's yes, the step-up and the
+      Compliance review does a case open for a person (the order pins it: never on the quote turn). This
+      case pins where the desk stops; BH-B4-01 continues with the reviewer's approval. Replaces G-B4-01
+      (owner decision 2026-11-10, #158).
 
   - id: BH-B4-04
     bullet: B4
@@ -247,12 +250,16 @@ cases:
     quote: {amount: "6000.00", free: "1120.00", excess: "4880.00", rate: "5%", charge: "244.00", net: "5756.00", threshold_tier: human, irs_notice: true}
     expect:
       final_outcome: NEEDS_HUMAN
-      tools: [quote, create_case]
+      numbers: ["244.00", "5,756.00"]
+      contains: ["59"]
+      tools: [quote, compliance_review, create_case]
+      order: [quote, compliance_review, create_case]
       not_tools: [execute]
       executed: false
     note: >-
-      Under $25,000 but over 50% of the $11,200 balance (D-02): after the yes and the step-up a person decides.
-      Replaces G-B4-02 (owner decision 2026-11-11).
+      Under $25,000 but over 50% of the $11,200 balance (D-02): after the yes, the step-up and the
+      Compliance review a person decides. The quote carries the IRS notice (under 59 1/2, FR-06). Replaces
+      G-B4-02 (owner decision 2026-11-10, #158).
 
   # ---------- B5 ----------
   - id: BH-B5-01
