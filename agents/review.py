@@ -152,7 +152,17 @@ class AgentReviewDesk:
 
     # ---------- reject or ask for information on a withdrawal ----------
     def _refuse_or_ask(self, packet: CasePacket, pid: str, decision: HumanDecision) -> ReviewResult:
-        if self._proposals.status(pid) is ProposalStatus.ESCALATED:
+        status = self._proposals.status(pid)
+        # Issue #151 (found by /code-review on PR #150): the case was marked rejected whatever the
+        # withdrawal's state, so a reject landed on one already approved (racing an approval) or
+        # executed. Only a withdrawal still with the person (or already void, for a reject) can
+        # be rejected or put on hold for information; anything else is refused unwritten.
+        allowed = {ProposalStatus.ESCALATED}
+        if decision.decision is Decision.REJECT:
+            allowed.add(ProposalStatus.VOIDED)
+        if status not in allowed:
+            return self._not_done(packet, decision, f"the withdrawal is already {status.value}")
+        if status is ProposalStatus.ESCALATED:
             self._money.approvals.record(
                 Approval(
                     approval_id=f"appr-{uuid.uuid4().hex[:12]}",
@@ -181,13 +191,13 @@ class AgentReviewDesk:
 
     # ---------- helpers ----------
     def _not_done(self, packet: CasePacket, decision: HumanDecision, why: str) -> ReviewResult:
-        """The approval could not take effect: the case stays open, nothing moved."""
+        """The decision could not take effect: the case stays as it was."""
         return ReviewResult(
             case_id=packet.case_id,
             decision=decision.decision,
             outcome=Outcome.NOT_PERMITTED,
             reference=packet.case_id,
-            text=f"Not executed: {why}. The case stays open; nothing was withdrawn.",
+            text=f"Not done: {why}. The case stays open.",
         )
 
     def _turn(self, packet: CasePacket) -> int:

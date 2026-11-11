@@ -194,3 +194,32 @@ def test_a_request_opens_a_case_and_moves_no_money(
     result = desk_review.decide(decide(r.reference, Decision.APPROVE))
     assert result.outcome is Outcome.ANSWERED and desk.executions() == 0  # recorded only
     assert desk_review.queue(CaseStatus.APPROVED)[0].case_id == r.reference
+
+
+# ---------- review defects on PR #150 ----------
+def test_issue_151_a_reject_after_the_approval_is_refused(tmp_path: Path) -> None:
+    # Issue #151, found by /code-review on PR #150: a reject was recorded on a withdrawal that had
+    # already been approved or executed.
+    desk, case_id = large_withdrawal_with_a_person(tmp_path)
+    desk_review = reviewer(desk)
+    proposal_id = desk.proposal_id()
+    # Reviewer A's approval is recorded (the proposal is approved), then B rejects meanwhile.
+    money = desk.stores.money
+    assert money is not None
+    from contracts.messages import Approval
+
+    proposal = desk.stores.proposals.get(proposal_id)
+    assert proposal is not None
+    money.approvals.record(
+        Approval(
+            approval_id="appr-a",
+            proposal_id=proposal_id,
+            approver="human:a",
+            decision=Decision.APPROVE,
+            token_hmac=money.issue_token(proposal_id, proposal.hash),
+        )
+    )
+    result = desk_review.decide(decide(case_id, Decision.REJECT, who="b"))
+    assert result.outcome is Outcome.NOT_PERMITTED and "approved" in result.text
+    assert SqliteCaseStore(desk.conn).status(case_id) is CaseStatus.OPEN  # nothing written
+    assert desk.status() is ProposalStatus.APPROVED
