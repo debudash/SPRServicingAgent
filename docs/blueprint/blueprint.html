@@ -138,7 +138,7 @@
       <div class="chip"><b>Framework</b>LangGraph</div>
       <div class="chip"><b>Topology</b>Code-routed graph, fixed money path</div>
       <div class="chip"><b>Models</b>Haiku 5.5 front · Sonnet 5.5 knowledge and checker</div>
-      <div class="chip"><b>Status</b>B1 to B4 built · contracts 0.6.2</div>
+      <div class="chip"><b>Status</b>B1 to B4 built · contracts 0.6.3</div>
       <div class="chip"><b>As-of date</b><span class="mono">2024-12-01</span></div>
     </div>
   </section>
@@ -204,7 +204,7 @@
     <p class="kicker">Where the authority lives</p>
     <h2>Guards are code, tested with a scripted model</h2>
     <div class="grid2">
-      <div class="guard"><h3>Login, then step-up</h3><p>A login and Gate A (the record) open the account view. Moving money needs the step-up form too; three failures lock the session and void the quote.</p><span class="ref">FR-02 · GR-12 · ADR 0007</span></div>
+      <div class="guard"><h3>Login, then step-up</h3><p>A login and Gate A (the record) open the account view, shown at the top of the chat. Moving money needs the step-up form too; three failures lock the session and void the quote.</p><span class="ref">FR-02 · GR-12 · ADR 0007</span></div>
       <div class="guard"><h3>Quote, yes, token, then execute</h3><p>The token is an HMAC over the proposal hash. Change the amount and the token is void.</p><span class="ref">FR-08 · GR-16 to GR-18</span></div>
       <div class="guard"><h3>Compliance cannot override a flag</h3><p>A rule flag sends the withdrawal to a person, whatever Compliance says.</p><span class="ref">FR-11</span></div>
       <div class="guard"><h3>One withdrawal per proposal</h3><p>The proposal ID is unique in the ledger, so a replayed execute or a repeated yes moves nothing.</p><span class="ref">FR-09 · #140</span></div>
