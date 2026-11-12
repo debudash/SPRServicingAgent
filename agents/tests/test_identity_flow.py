@@ -806,3 +806,28 @@ def test_issue_187_every_reply_that_asks_for_an_amount_sets_the_line() -> None:
             update={"transcript": [TranscriptEntry(role="desk", turn=1, text=asked)]}
         )
         assert "asked how much the customer wants to withdraw" in session_context(desk.state())
+
+
+# ---------- #191: the Concierge changed the customer's amount ----------
+def test_issue_191_the_quote_uses_the_amount_the_customer_typed() -> None:
+    """#191, found checking #187 live: with a quote waiting, "5000" was quoted as $4,500."""
+    from contracts.messages import Quote, ThresholdTier
+
+    desk = Desk()
+    desk.concierge._queue.extend([Intent(kind=IntentKind.WITHDRAWAL, amount_cents=450_000)])
+    five = Quote(
+        amount_cents=500_000,
+        free_cents=500_000,
+        excess_cents=0,
+        rate_bp=0,
+        charge_cents=0,
+        net_cents=500_000,
+        contract_year=3,
+        threshold_tier=ThresholdTier.SELF_SERVICE,
+        irs_notice=False,
+    )
+    quotes = desk.runner._stores.quotes
+    assert isinstance(quotes, MemoryQuotes)
+    quotes.results[("SPR-1001", 500_000)] = five  # only $5,000 is quotable
+    [r] = desk.talk("SPR-1001", "5000")
+    assert "$5,000.00" in r.reply_text and "$4,500.00" not in r.reply_text

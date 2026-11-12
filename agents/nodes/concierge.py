@@ -4,6 +4,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage
 
+from agents.guards.amounts import checked_amount
 from agents.llm import build_messages
 from agents.nodes.common import (
     Deps,
@@ -22,15 +23,14 @@ def make(deps: Deps) -> NodeFn:
     system, _version = load("concierge")
 
     def concierge(state: ConversationState) -> dict[str, Any]:
-        messages = build_messages(
-            system, session_context(state), [HumanMessage(content=latest_customer_text(state))]
-        )
+        text = latest_customer_text(state)
+        messages = build_messages(system, session_context(state), [HumanMessage(content=text)])
         try:
             intent = invoke_structured(deps.models[Role.CONCIERGE], Intent, messages, deps.turn)
         except Exception:
             deps.turn.provider_error = True
             deps.turn.failure = "model_error"
             return {}
-        return {"intent": intent}
+        return {"intent": checked_amount(intent, text)}
 
     return concierge
