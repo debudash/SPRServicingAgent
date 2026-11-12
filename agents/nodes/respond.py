@@ -11,6 +11,7 @@ from typing import Any
 from agents.nodes import case
 from agents.nodes.common import (
     ACCOUNT_INTENTS,
+    ASK_AMOUNT_QUESTION,
     MONEY_INTENTS,
     REQUEST_INTENTS,
     Deps,
@@ -98,20 +99,16 @@ STEP_UP_INCOMPLETE_TEXT = (
 
 
 # ---------- #88: quotes and the yes ----------
-ASK_AMOUNT_TEXT = (
-    "How much would you like to withdraw? I'll show you an exact quote before anything happens."
-)
+ASK_AMOUNT_TEXT = f"{ASK_AMOUNT_QUESTION} I'll show you an exact quote before anything happens."
 NOTHING_TO_CONFIRM_TEXT = (
-    "There's no quote waiting for your answer, so nothing has been confirmed. Tell me how much "
-    "you'd like to withdraw and I'll quote it first."
+    "There's no quote waiting for your answer, so nothing has been confirmed. "
+    f"{ASK_AMOUNT_QUESTION} I'll quote it first."
 )
 STEP_UP_NEEDED_TEXT = (
     "Thank you. Before any money moves, please complete the identity check. Nothing has been "
     "withdrawn yet."
 )
-NOT_POSITIVE_TEXT = (
-    "I can only quote an amount greater than zero. How much would you like to withdraw?"
-)
+NOT_POSITIVE_TEXT = f"I can only quote an amount greater than zero. {ASK_AMOUNT_QUESTION}"
 NOT_ACTIVE_TEXT = (
     "I can't quote a withdrawal on this account because it isn't active. Please call SPR "
     f"Financials at {CONTACT}."

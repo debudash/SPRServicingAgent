@@ -40,7 +40,14 @@ from contracts.messages import (
 )
 from contracts.outcomes import Outcome
 from contracts.ports import AuditEvent, LoginDeskRunner, LoginRefused, TurnResult
-from contracts.state import ConversationState, GateResult, Session, TraceEvent, Versions
+from contracts.state import (
+    ConversationState,
+    GateResult,
+    Session,
+    TraceEvent,
+    TranscriptEntry,
+    Versions,
+)
 from contracts.tools import Node, Role, Step
 
 from .test_graph import FEES, FakeSearch, MemoryAudit, cited
@@ -772,3 +779,30 @@ def test_issue_183_the_review_message_says_submitted_and_a_person_will_reach_out
     assert "submitted for review" in text and "CASE-ABC123" in text
     assert "Nothing has been paid" in text
     assert "once the review is complete" in text
+
+
+# ---------- #187: an amount given in answer to the desk's question read as small talk ----------
+def test_issue_187_the_concierge_is_told_the_desk_asked_for_an_amount() -> None:
+    """#187, found by the owner in the local desk: "26000" after the question got a greeting."""
+    desk = Desk(IntentKind.WITHDRAWAL, IntentKind.WITHDRAWAL)
+    first, _ = desk.talk("SPR-1001", "how much can i withdraw", "26000")
+    assert first.reply_text.startswith("How much would you like to withdraw?")
+    first_call, second_call = (" ".join(str(m.content) for m in c) for c in desk.concierge.calls)
+    assert "asked how much the customer wants to withdraw" not in first_call
+    assert "asked how much the customer wants to withdraw" in second_call
+
+
+def test_issue_187_every_reply_that_asks_for_an_amount_sets_the_line() -> None:
+    """Review on PR #188 (spec): "nothing to confirm" asked too, and a live quote hid the line."""
+    from agents.nodes.common import session_context
+    from agents.nodes.respond import NOTHING_TO_CONFIRM_TEXT
+
+    desk = Desk(IntentKind.WITHDRAWAL)
+    desk.login("SPR-1001")
+    put_pending_confirmation(desk.runner, desk.conv)
+    state = desk.state().model_copy(update={"confirmation": None})  # a quote awaits its answer
+    for asked in (NOTHING_TO_CONFIRM_TEXT, "How much would you like to withdraw? I'll show you"):
+        desk.runner._states[desk.conv] = state.model_copy(
+            update={"transcript": [TranscriptEntry(role="desk", turn=1, text=asked)]}
+        )
+        assert "asked how much the customer wants to withdraw" in session_context(desk.state())
