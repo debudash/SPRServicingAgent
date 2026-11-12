@@ -772,3 +772,15 @@ def test_issue_183_the_review_message_says_submitted_and_a_person_will_reach_out
     assert "submitted for review" in text and "CASE-ABC123" in text
     assert "Nothing has been paid" in text
     assert "once the review is complete" in text
+
+
+# ---------- #187: an amount given in answer to the desk's question was read as small talk ----------
+def test_issue_187_the_concierge_is_told_the_desk_asked_for_an_amount() -> None:
+    """#187, found by the owner in the local desk: "26000" after the question got a greeting."""
+    desk = Desk(IntentKind.WITHDRAWAL, IntentKind.WITHDRAWAL)
+    first, _ = desk.talk("SPR-1001", "how much can i withdraw", "26000")
+    assert first.reply_text.startswith("How much would you like to withdraw?")
+    first_call, second_call = desk.concierge.calls
+    said = lambda call: " ".join(str(m.content) for m in call)  # noqa: E731
+    assert "asked how much the customer wants to withdraw" not in said(first_call)
+    assert "asked how much the customer wants to withdraw" in said(second_call)

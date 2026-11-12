@@ -203,6 +203,10 @@ def latest_customer_text(state: ConversationState) -> str:
     return ""
 
 
+# #187: the question the desk asks for a withdrawal amount; respond builds its replies from it.
+ASK_AMOUNT_QUESTION = "How much would you like to withdraw?"
+
+
 def session_context(state: ConversationState) -> str:
     """Session facts safe for a model and stable across conversations: no IDs, no dates."""
     s = state.session
@@ -221,7 +225,12 @@ def session_context(state: ConversationState) -> str:
     p, c = state.proposal, state.confirmation
     waiting = p is not None and (c is None or c.proposal_id != p.proposal_id)
     quote = " A withdrawal quote is waiting for the customer's answer." if waiting else ""
-    return f"Session: {who}.{quote} Customer turn {state.turn}."
+    # Issue #187: the Concierge reads one message at a time, so "26000" answering the desk's
+    # "How much would you like to withdraw?" read as small talk. Say when the desk just asked.
+    desk = [e.text for e in state.transcript if e.role == "desk"]
+    asked = desk and ASK_AMOUNT_QUESTION in desk[-1] and not waiting
+    amount = " The desk just asked how much the customer wants to withdraw." if asked else ""
+    return f"Session: {who}.{quote}{amount} Customer turn {state.turn}."
 
 
 def narrow(value: object) -> Any:
