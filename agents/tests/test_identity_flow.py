@@ -774,7 +774,7 @@ def test_issue_183_the_review_message_says_submitted_and_a_person_will_reach_out
     assert "once the review is complete" in text
 
 
-# ---------- #187: an amount given in answer to the desk's question was read as small talk ----------
+# ---------- #187: an amount given in answer to the desk's question read as small talk ----------
 def test_issue_187_the_concierge_is_told_the_desk_asked_for_an_amount() -> None:
     """#187, found by the owner in the local desk: "26000" after the question got a greeting."""
     desk = Desk(IntentKind.WITHDRAWAL, IntentKind.WITHDRAWAL)
