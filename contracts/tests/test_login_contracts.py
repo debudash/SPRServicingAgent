@@ -58,7 +58,8 @@ def _state(session: Session, view: AccountView | None = None) -> ConversationSta
 
 def test_version_is_current() -> None:
     # 0.6.1 (#89) adds CaseReason.WITHDRAWAL_REVIEW, and 0.6.2 the B4 reviewer port, on top of
-    # this file's 0.6.0 ports; 0.6.3 (#172) adds LoginDeskRunner.account; 0.6.4 (#176) the start date.
+    # this file's 0.6.0 ports; 0.6.3 (#172) adds LoginDeskRunner.account;
+    # 0.6.4 (#176) adds AccountView.contract_start_date.
     assert CONTRACTS_VERSION == "0.6.4"
 
 
