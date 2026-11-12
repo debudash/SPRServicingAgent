@@ -439,8 +439,21 @@ def _after_money(state: ConversationState, money: MoneyFacts) -> tuple[Outcome, 
         if not asks_without_amount:  # an answer to the live quote, but not a clear yes
             return Outcome.ANSWERED, _clear_yes_text(amount), None
     if intent.kind is IntentKind.WITHDRAWAL:
-        return Outcome.ANSWERED, ASK_AMOUNT_TEXT, None
+        return Outcome.ANSWERED, _allowance_text(state.account_view) + ASK_AMOUNT_TEXT, None
     return Outcome.NOT_PERMITTED, NOTHING_TO_CONFIRM_TEXT, None
+
+
+def _allowance_text(view: AccountView | None) -> str:
+    """Issue #189: "how much can I withdraw?" is answered from the account before the desk asks
+    for an amount. The figures come from the account view (GR-02), never from the model."""
+    if view is None:
+        return ""
+    return (
+        f"You can withdraw up to {format_dollars(view.allowance_remaining_cents)} this contract "
+        f"year without a surrender charge. Your current balance is "
+        f"{format_dollars(view.balance_cents)}; any amount above the free allowance has a "
+        "surrender charge, which the quote shows. "
+    )
 
 
 def _after_gate(state: ConversationState, gate: GateResult) -> tuple[Outcome, str, str | None]:

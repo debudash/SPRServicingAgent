@@ -63,3 +63,4 @@ Defects found in review are the evidence for workstream F (ADR 0002), so they al
 | #182 | 2026-11-11 | Every live Compliance call failed: Sonnet 5.5 at high effort refuses a forced tool choice | manual run (owner, local desk) | c37c25c |
 | #187 | 2026-11-11 | An amount given in answer to "How much would you like to withdraw?" was read as small talk | manual run (owner, local desk) | f3c0ffd |
 | #191 | 2026-11-11 | The Concierge changed the customer's amount ("5000" quoted as $4,500) | checking #187 live; review on PR #192 (both axes) | 24aa241 |
+| #189 | 2026-11-11 | "How much can I withdraw?" only asked for an amount, not the free allowance | review on PR #188; manual run (owner, local desk) | e0a0c51 |
