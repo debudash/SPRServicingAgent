@@ -761,3 +761,14 @@ def test_issue_177_a_greeting_gets_a_friendly_answer_not_a_refusal() -> None:
         assert r.outcome is Outcome.ANSWERED, customer
         assert r.reply_text.startswith("Hello"), r.reply_text
         assert "isn't available" not in r.reply_text
+
+
+# ---------- #183: the review message did not say clearly what happens next ----------
+def test_issue_183_the_review_message_says_submitted_and_a_person_will_reach_out() -> None:
+    """#183, asked by the owner: say plainly it is submitted and the team will be in touch."""
+    from agents.nodes.respond import _review_text
+
+    text = _review_text("CASE-ABC123")
+    assert "submitted for review" in text and "CASE-ABC123" in text
+    assert "Nothing has been paid" in text
+    assert "once the review is complete" in text

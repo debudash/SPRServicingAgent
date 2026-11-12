@@ -203,9 +203,10 @@ def _executed_text(quote: Quote, reference: str) -> str:
 def _review_text(case_id: str) -> str:
     """#89: a person reviews this withdrawal; nothing has moved (GR-19, FR-26)."""
     return (
-        "This withdrawal needs a review by a member of our team before it can be paid, so "
-        f"nothing has been withdrawn yet. I've opened case {case_id}, and the team will contact "
-        "you."
+        # #183 (owner): say plainly that it is submitted, nothing is paid, and who acts next.
+        f"Your withdrawal request has been submitted for review (case {case_id}). Nothing has "
+        "been paid yet. A member of our team will reach out to you once the review is complete, "
+        'and you can check its status under "Your cases" whenever you log in.'
     )
 
 
