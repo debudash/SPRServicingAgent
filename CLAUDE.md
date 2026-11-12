@@ -4,7 +4,7 @@ Rules for every agent and human working in this repo. Agents cannot edit this fi
 
 ## Product
 v2 of the SPR Financials servicing agent: a multi-agent **Withdrawal & Hardship Case Desk** for the
-SecureGrowth Fixed Annuity. The brief is `problemstmt/AI_Engineer_Assignment.docx`; the provided data is
+SecureGrowth Fixed Annuity. The brief is `problemstmt/SPR-Desk.docx`; the provided data is
 `problemstmt/spr_starter_kit/`. v1 (one tool-calling agent) is frozen in `baseline/` and is the
 single-agent baseline v2 is compared against. Design lives in `docs/` (blueprint, `docs/decisions/`).
 

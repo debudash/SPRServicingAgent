@@ -5,7 +5,7 @@ cases handled by coordinated agents (Concierge, Knowledge, Transaction, Complian
 reviewer for the highest-risk actions. Built through a repeatable pipeline: every change is an issue,
 a branch, a PR and a set of gates, whether a person or an agent wrote it.
 
-- **Brief:** [problemstmt/AI_Engineer_Assignment.docx](problemstmt/AI_Engineer_Assignment.docx)
+- **Brief:** [problemstmt/SPR-Desk.docx](problemstmt/SPR-Desk.docx)
 - **v1 (single agent, frozen):** [baseline/](baseline/README.md), released as
   [v1.0](https://github.com/debudash/SPRServicingAgent/releases/tag/Agent-V1-SPRF-final)
 
