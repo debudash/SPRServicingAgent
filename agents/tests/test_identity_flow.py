@@ -38,6 +38,7 @@ from contracts.messages import (
     Intent,
     IntentKind,
 )
+from contracts.money import format_dollars
 from contracts.outcomes import Outcome
 from contracts.ports import AuditEvent, LoginDeskRunner, LoginRefused, TurnResult
 from contracts.state import (
@@ -786,7 +787,7 @@ def test_issue_187_the_concierge_is_told_the_desk_asked_for_an_amount() -> None:
     """#187, found by the owner in the local desk: "26000" after the question got a greeting."""
     desk = Desk(IntentKind.WITHDRAWAL, IntentKind.WITHDRAWAL)
     first, _ = desk.talk("SPR-1001", "how much can i withdraw", "26000")
-    assert first.reply_text.startswith("How much would you like to withdraw?")
+    assert "How much would you like to withdraw?" in first.reply_text  # #189: after the allowance
     first_call, second_call = (" ".join(str(m.content) for m in c) for c in desk.concierge.calls)
     assert "asked how much the customer wants to withdraw" not in first_call
     assert "asked how much the customer wants to withdraw" in second_call
@@ -831,3 +832,21 @@ def test_issue_191_the_quote_uses_the_amount_the_customer_typed() -> None:
     quotes.results[("SPR-1001", 500_000)] = five  # only $5,000 is quotable
     [r] = desk.talk("SPR-1001", "5000")
     assert "$5,000.00" in r.reply_text and "$4,500.00" not in r.reply_text
+
+
+# ---------- #189: "how much can I withdraw" only asked for an amount ----------
+def test_issue_189_how_much_can_i_withdraw_states_the_allowance_first() -> None:
+    """#189, found by review on PR #188 and by the owner in the local desk: "how much can I
+    withdraw without a fee" got only "How much would you like to withdraw?"."""
+    desk = Desk(IntentKind.WITHDRAWAL)
+    [r] = desk.talk("SPR-1001", "how much can i withdraw without a fee")
+    view = desk.runner.account(desk.conv)
+    assert view is not None
+    text = r.reply_text
+    assert r.outcome is Outcome.ANSWERED
+    assert format_dollars(view.allowance_remaining_cents) in text, text
+    assert format_dollars(view.balance_cents) in text, text
+    assert "surrender charge" in text
+    assert text.index(format_dollars(view.allowance_remaining_cents)) < text.index(
+        "How much would you like to withdraw?"
+    )

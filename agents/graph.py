@@ -143,6 +143,12 @@ def route_money(state: ConversationState, proposals: ProposalStore) -> str:
         proposal is None or not live or amount != proposal.quote.amount_cents
     ):
         return Node.TRANSACTION.value
+    # Issue #189: "how much can I withdraw?" went to confirm, which reads no account, so the reply
+    # could only ask for an amount. A withdrawal with no amount and no quote waiting reads the
+    # account view, and respond states the allowance and balance before asking how much.
+    asks = intent is not None and intent.kind is IntentKind.WITHDRAWAL and amount is None
+    if asks and not live:
+        return Node.ACCOUNT.value
     return Node.CONFIRM.value
 
 
