@@ -228,9 +228,10 @@ def session_context(state: ConversationState) -> str:
     # Issue #187: the Concierge reads one message at a time, so "26000" answering the desk's
     # "How much would you like to withdraw?" read as small talk. Say when the desk just asked.
     desk = [e.text for e in state.transcript if e.role == "desk"]
-    asked = desk and ASK_AMOUNT_QUESTION in desk[-1] and not waiting
-    amount = " The desk just asked how much the customer wants to withdraw." if asked else ""
-    return f"Session: {who}.{quote}{amount} Customer turn {state.turn}."
+    # Review on PR #188: also while a quote is live, when the customer asked to withdraw again.
+    asked = bool(desk) and ASK_AMOUNT_QUESTION in desk[-1]
+    ask = " The desk just asked how much the customer wants to withdraw." if asked else ""
+    return f"Session: {who}.{quote}{ask} Customer turn {state.turn}."
 
 
 def narrow(value: object) -> Any:

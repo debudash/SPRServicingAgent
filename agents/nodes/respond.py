@@ -101,8 +101,8 @@ STEP_UP_INCOMPLETE_TEXT = (
 # ---------- #88: quotes and the yes ----------
 ASK_AMOUNT_TEXT = f"{ASK_AMOUNT_QUESTION} I'll show you an exact quote before anything happens."
 NOTHING_TO_CONFIRM_TEXT = (
-    "There's no quote waiting for your answer, so nothing has been confirmed. Tell me how much "
-    "you'd like to withdraw and I'll quote it first."
+    "There's no quote waiting for your answer, so nothing has been confirmed. "
+    f"{ASK_AMOUNT_QUESTION} I'll quote it first."
 )
 STEP_UP_NEEDED_TEXT = (
     "Thank you. Before any money moves, please complete the identity check. Nothing has been "
