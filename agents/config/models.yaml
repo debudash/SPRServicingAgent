@@ -1,6 +1,9 @@
 # Model map (ADR 0004). One entry per contracts.tools.Role.
+# Used: concierge, knowledge, compliance. Not used (issue #195): transaction is code (ADR 0008) and
+# case is code (the packet is fixed wording plus the scrubbed customer turns). Their rows are kept so
+# a model can be put in front of the same tools and guards later.
 concierge: {model: claude-haiku-5-5, effort: low}
-case: {model: claude-haiku-5-5, effort: low}
+case: {model: claude-haiku-5-5, effort: low}  # unused: the case step is code
 knowledge: {model: claude-sonnet-5-5, effort: medium}
-transaction: {model: claude-sonnet-5-5, effort: medium}
+transaction: {model: claude-sonnet-5-5, effort: medium}  # unused: code (ADR 0008)
 compliance: {model: claude-sonnet-5-5, effort: high}

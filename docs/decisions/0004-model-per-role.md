@@ -4,6 +4,10 @@ Date: 2026-11-09 · Status: accepted · Decided by: integrator (owner) · Issue:
 
 Amended by ADR 0008 (2026-11-10): the Transaction step is code, so its row below is not used.
 
+Amended 2026-11-11 (#195): the Case step is code too. Its packet is fixed wording plus the customer's
+scrubbed turns, and the reviewer's reasons come from the rule flags and Compliance, so its row below
+is not used either. The model agents in the product are the Concierge, Knowledge and Compliance.
+
 ## Context
 The cost model ([COST_MODEL.md](../COST_MODEL.md)) shows that Sonnet 5.5 on every agent costs about $0.104
 per routine withdrawal without caching and $0.051 with it, both above the $0.042 target (PRD M-14), and the
