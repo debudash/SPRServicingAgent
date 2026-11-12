@@ -88,6 +88,9 @@ class AccountView(Message):
     balance_cents: Cents = Field(ge=0)
     allowance_remaining_cents: Cents = Field(ge=0)
     withdrawals_this_year: int = Field(ge=0)
+    # 0.6.4 (#176): the contract's issue date, so the desk can say when it began. Not a restricted
+    # field (PG-04). Optional so views built before 0.6.4 stay valid.
+    contract_start_date: date | None = None
 
 
 # ---------- Quote and proposal ----------

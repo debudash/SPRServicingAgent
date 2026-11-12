@@ -53,4 +53,5 @@ class SqliteAccountStore:
             balance_cents=balance_cents,
             allowance_remaining_cents=free_allowance_cents(balance_cents, int(withdrawn)),
             withdrawals_this_year=int(count),
+            contract_start_date=start,  # #176
         )

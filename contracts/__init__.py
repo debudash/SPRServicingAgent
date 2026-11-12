@@ -30,6 +30,8 @@ person decides (`WAIVER_REQUEST`, `HARDSHIP`, `RMD`, `FULL_SURRENDER`).
 
 0.6.3 (#172) is additive: `LoginDeskRunner.account`, the account summary at the top of the chat,
 returned only when the identity gate would let the session read the account.
+
+0.6.4 (#176) is additive: `AccountView.contract_start_date`, the contract's issue date.
 """
 
-CONTRACTS_VERSION = "0.6.3"
+CONTRACTS_VERSION = "0.6.4"

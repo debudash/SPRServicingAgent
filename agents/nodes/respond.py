@@ -236,7 +236,11 @@ def _failed_text(attempts: int) -> str:
 
 
 def _account_text(view: AccountView) -> str:
-    return (
+    # Issue #176: the reply was one balance template, so "when did my contract start?" got the
+    # balance. The view now carries the start date (contracts 0.6.4) and the reply leads with it.
+    start = view.contract_start_date
+    began = f"Your contract started on {start:%B} {start.day}, {start.year}. " if start else ""
+    return began + (
         f"Your current balance is {format_dollars(view.balance_cents)}. You're in contract year "
         f"{view.contract_year}, and you can withdraw up to "
         f"{format_dollars(view.allowance_remaining_cents)} more this contract year without a "
