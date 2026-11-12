@@ -136,7 +136,7 @@ def test_product_question_is_answered_with_citation() -> None:  # G-B1-01/02/03/
     assert [row.event for row in audit.rows] == [AuditEvent.ANSWERED]
     assert audit.rows[0].versions["documents"] == {"fee_schedule": 1}
     assert audit.rows[0].versions["prompts"] == {
-        "concierge": "3",
+        "concierge": "4",
         "knowledge": "1",
         "compliance": "1",
     }
