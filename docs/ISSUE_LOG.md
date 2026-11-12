@@ -57,3 +57,9 @@ Defects found in review are the evidence for workstream F (ADR 0002), so they al
 | #161 | 2026-11-11 | The desk page failed in Docker with "No module named 'agents'" | manual run (owner opened the page) | 0951718 |
 | #165 | 2026-11-11 | The page smoke skipped a page whose button was missing and still printed PASS | review on PR #163 (spec) | 8535316 |
 | #166 | 2026-11-11 | The page smoke did not load the page on Streamlit's import path, so it could not catch #161 | review on PR #163 (spec) | 672135b |
+| #175 | 2026-11-11 | Two dollar amounts in a chat reply rendered as a LaTeX formula | manual run (owner, local desk) | addd3f5 |
+| #176 | 2026-11-11 | The desk could not say when the contract started (issue date) | manual run (owner, local desk) | bb05b23 |
+| #177 | 2026-11-11 | A greeting got a NOT_PERMITTED refusal | manual run (owner, local desk) | 68f9b84 |
+| #182 | 2026-11-11 | Every live Compliance call failed: Sonnet 5.5 at high effort refuses a forced tool choice | manual run (owner, local desk) | c37c25c |
+| #187 | 2026-11-11 | An amount given in answer to "How much would you like to withdraw?" was read as small talk | manual run (owner, local desk) | f3c0ffd |
+| #191 | 2026-11-11 | The Concierge changed the customer's amount ("5000" quoted as $4,500) | checking #187 live; review on PR #192 (both axes) | 24aa241 |
