@@ -41,6 +41,11 @@ NOT_YET_TEXT = (
     "That isn't available through this desk yet. I can answer questions about the "
     "SecureGrowth Fixed Annuity."
 )
+HELLO_TEXT = (
+    "Hello! I'm the SecureGrowth Fixed Annuity servicing desk. I can answer questions about the "
+    "annuity, show your balance and contract details once you're logged in, and quote a "
+    "withdrawal. What would you like to do?"
+)
 UNAVAILABLE_TEXT = (
     "I couldn't complete that just now, and nothing has been changed. Please try again shortly."
 )
@@ -391,6 +396,11 @@ def _decide(
         return Outcome.NO_SOURCE, answer.text, None
     if kind is IntentKind.OUT_OF_SCOPE:
         return Outcome.OUT_OF_SCOPE, OUT_OF_SCOPE_TEXT, None
+    # Issue #177: a greeting or small talk (the Concierge's `other`) fell through to the refusal
+    # below as NOT_PERMITTED, which PRD section 6 keeps for identity, status or tier blocks.
+    # Nothing was asked, so it is answered with what the desk can do.
+    if kind is IntentKind.OTHER:
+        return Outcome.ANSWERED, HELLO_TEXT, None
     return Outcome.NOT_PERMITTED, NOT_YET_TEXT, None
 
 

@@ -750,3 +750,14 @@ def test_issue_176_the_account_reply_states_the_contract_start_date() -> None:
     assert r.outcome is Outcome.ANSWERED
     assert "Your contract started on June 1, 2022" in r.reply_text
     assert "87,450.62" in r.reply_text  # the balance is still there
+
+
+# ---------- #177: a greeting got a NOT_PERMITTED refusal ----------
+def test_issue_177_a_greeting_gets_a_friendly_answer_not_a_refusal() -> None:
+    """#177, found by the owner in the local desk: "hi" was refused as NOT_PERMITTED."""
+    for customer in ("SPR-1001", None):  # logged in, and a guest
+        desk = Desk(IntentKind.OTHER)
+        [r] = desk.talk(customer, "hi")
+        assert r.outcome is Outcome.ANSWERED, customer
+        assert r.reply_text.startswith("Hello"), r.reply_text
+        assert "isn't available" not in r.reply_text

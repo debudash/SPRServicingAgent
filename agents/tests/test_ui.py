@@ -277,7 +277,7 @@ def test_staff_open_the_review_queue_and_see_the_packet() -> None:
     assert not at.exception
     page = " ".join(m.value for m in at.markdown)
     assert "Review queue" in " ".join(h.value for h in at.subheader)
-    assert "over_amount" in page and "I want to withdraw $30,000." in page
+    assert "over_amount" in page and r"I want to withdraw \$30,000." in page  # #175: escaped $
     assert at.table  # the quote's figures
 
 
@@ -360,3 +360,24 @@ def test_issue_172_a_guest_sees_no_account_summary() -> None:
     assert not at.exception
     assert len(at.metric) == 0
     assert "Guest** (product questions only)" in " ".join(m.value for m in at.markdown)
+
+
+# ---------- #175: dollar amounts rendered as a LaTeX formula ----------
+def test_issue_175_a_reply_with_two_amounts_keeps_its_dollar_signs() -> None:
+    """#175, found by the owner in the local desk: two $ signs made the text between them math."""
+
+    class AmountsRunner(FakeRunner):
+        def send(self, conversation_id: str, text: str) -> TurnResult:
+            return TurnResult(
+                conversation_id=conversation_id,
+                turn=1,
+                reply_text="Your balance is $87,450.62 and $8,745.06 is free.",
+                outcome=Outcome.ANSWERED,
+            )
+
+    at = _app(AmountsRunner())
+    _log_in(at, "SPR-1001", "right")
+    at.chat_input[0].set_value("What's my balance?").run()
+    assert not at.exception
+    shown = [m.value for m in at.markdown]
+    assert r"Your balance is \$87,450.62 and \$8,745.06 is free." in shown
