@@ -108,9 +108,7 @@ STEP_UP_NEEDED_TEXT = (
     "Thank you. Before any money moves, please complete the identity check. Nothing has been "
     "withdrawn yet."
 )
-NOT_POSITIVE_TEXT = (
-    f"I can only quote an amount greater than zero. {ASK_AMOUNT_QUESTION}"
-)
+NOT_POSITIVE_TEXT = f"I can only quote an amount greater than zero. {ASK_AMOUNT_QUESTION}"
 NOT_ACTIVE_TEXT = (
     "I can't quote a withdrawal on this account because it isn't active. Please call SPR "
     f"Financials at {CONTACT}."

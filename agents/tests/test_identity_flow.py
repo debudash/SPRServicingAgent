@@ -780,7 +780,6 @@ def test_issue_187_the_concierge_is_told_the_desk_asked_for_an_amount() -> None:
     desk = Desk(IntentKind.WITHDRAWAL, IntentKind.WITHDRAWAL)
     first, _ = desk.talk("SPR-1001", "how much can i withdraw", "26000")
     assert first.reply_text.startswith("How much would you like to withdraw?")
-    first_call, second_call = desk.concierge.calls
-    said = lambda call: " ".join(str(m.content) for m in call)  # noqa: E731
-    assert "asked how much the customer wants to withdraw" not in said(first_call)
-    assert "asked how much the customer wants to withdraw" in said(second_call)
+    first_call, second_call = (" ".join(str(m.content) for m in c) for c in desk.concierge.calls)
+    assert "asked how much the customer wants to withdraw" not in first_call
+    assert "asked how much the customer wants to withdraw" in second_call
