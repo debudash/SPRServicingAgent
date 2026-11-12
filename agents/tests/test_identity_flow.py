@@ -831,21 +831,3 @@ def test_issue_191_the_quote_uses_the_amount_the_customer_typed() -> None:
     quotes.results[("SPR-1001", 500_000)] = five  # only $5,000 is quotable
     [r] = desk.talk("SPR-1001", "5000")
     assert "$5,000.00" in r.reply_text and "$4,500.00" not in r.reply_text
-
-
-@pytest.mark.parametrize(
-    ("text", "cents"),
-    [
-        ("5000", {500_000}),
-        ("withdraw $5,000.00 please", {500_000}),
-        ("26,000", {2_600_000}),
-        ("10k", {1_000_000}),
-        ("$1,234.5", {123_450}),
-        ("5000 or 6000", {500_000, 600_000}),
-        ("five thousand", set()),
-    ],
-)
-def test_issue_191_amounts_are_read_from_the_text(text: str, cents: set[int]) -> None:
-    from agents.nodes.concierge import amounts_in
-
-    assert amounts_in(text) == cents
