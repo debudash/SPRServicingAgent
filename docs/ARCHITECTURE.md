@@ -4,8 +4,10 @@ The engineering reference under the [blueprint](blueprint/README.md). The bluepr
 graph, agent roles, models, who writes which state field). This document adds what the code is built from:
 the vocabulary, the data model, the flows, the trust boundaries and the deployment.
 
-Status: **design-time**. At release (R) the `evidence-compiler` agent refreshes it from the code and real runs,
-and every difference from this version is called out. Requirement IDs refer to [PRD.md](PRD.md).
+Status: **design-time, with sections 2.3, 3, 4 and 5 updated to the built code on 2026-11-12** (the login
+and step-up of ADR 0007, the review queue outside the graph, no checkpoints). At release (R) the
+`evidence-compiler` agent refreshes it from the code and real runs, and every difference from this version
+is called out. Requirement IDs refer to [PRD.md](PRD.md).
 
 ## 1. Vocabulary
 
@@ -163,7 +165,7 @@ conversation, and its cases, from these rows alone (FR-25).
 |---|---|---|
 | `knowledge/*.md` | Knowledge documents, integrator-owned | Front matter: `doc_id`, `version`, `effective_date`, `superseded_by` (optional), `synthetic` (true/false) |
 | Chroma (embedded, `var/chroma/`) | One chunk per document section | Metadata on every chunk: `doc_id`, `version`, `effective_date`, `section`, `source_path`. Retrieval filters to the version in force at the as-of date (FR-24) |
-| LangGraph checkpoints (`var/checkpoints.db`) | Case state per conversation, for the human-review pause | Holds scrubbed messages only |
+| Conversation state (in the runner's memory) | `ConversationState` per conversation, between turns | Not persisted: the graph compiles without a checkpointer, and a case waiting for a person lives in `desk.db`, not in a paused graph (section 3.4). `var/checkpoints.db` is reserved in settings but never created |
 
 ## 3. Flows
 
@@ -179,7 +181,7 @@ sequenceDiagram
     participant CON as Concierge (Haiku)
     participant KN as Knowledge (Sonnet)
     participant KB as Chroma index
-    participant R as respond (Haiku)
+    participant R as respond (code)
     C->>G: "Is the surrender charge 4% in year 5?"
     G->>G: scrub text, load session, start budgets
     G->>CON: classify (scrubbed turn)
@@ -198,77 +200,81 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     actor C as Customer
-    participant G as Graph (intake)
-    participant ID as identity_gate (code)
+    participant RN as runner (login)
     participant IDS as data/identity
+    participant CON as Concierge (Haiku)
+    participant ID as identity_gate (code)
     participant ACC as account (code)
-    participant R as respond
-    C->>G: "What's my balance?"
-    G->>ID: Gate A for the session's customer
+    participant R as respond (code)
+    C->>RN: customer ID and password (simulated upstream login, ADR 0007)
+    RN->>IDS: check_password
+    IDS-->>RN: true or false
+    RN-->>C: chat opens, bound to the customer, authenticated
+    C->>CON: "What's my balance?"
+    CON-->>ID: intent account_info
+    ID->>IDS: Gate A, read live (identity_verified)
     alt account not trusted (Gate A fails)
-        ID-->>R: NOT_PERMITTED, no challenge asked (GR-14)
-        R-->>C: "Please contact SPR at 1-800-555-0192"
-    else trusted, challenge not yet passed
-        ID-->>R: ask for date of birth and last 4 of SSN
-        R-->>C: verification request
-        C->>G: "1958-03-14, last four 7823"
-        G->>G: extract credential candidates from the raw text, then mask them
-        G->>ID: candidates (never shown to a model)
-        ID->>IDS: check_challenge(customer, dob, last4)
-        IDS-->>ID: true / false
-        alt passed
-            ID->>ACC: read account view
-            ACC-->>R: balance, contract year, allowance (no restricted fields)
-            R-->>C: "Your balance is $87,450.62"
-        else third failure
-            ID-->>R: locked; case opened (D-08)
-            R-->>C: NOT_PERMITTED with case reference
-        end
+        ID-->>R: UNTRUSTED, no challenge asked (GR-14)
+        R-->>C: NOT_PERMITTED, "Please contact SPR at 1-800-555-0192"
+    else trusted and logged in
+        ID-->>ACC: LOGGED_IN
+        ACC-->>R: balance, contract year, allowance, start date (no restricted fields)
+        R-->>C: "Your contract started on June 1, 2022. Your current balance is $87,450.62..."
     end
+    Note over ID: audit: answered or gate_a_refused
 ```
 
 FR-03 at the start (#82): the desk's first reply in a session bound to an untrusted account carries the
 notice and the contact number, whatever the turn asked; a product question is still answered. A third
 party in an anonymous session gets no case (contracts 0.4.0): there is no account to open one for.
 
-Where the capture runs: at the runner's entry, before the customer turn is appended to the
-transcript, so the raw text never enters `ConversationState` (and so never reaches a checkpoint).
-The candidates live only in the per-turn context that `identity_gate` reads. A turn with no usable
-candidates asks again and does not count as a failed attempt (ADR 0005). `identity_gate` records its
-decision in the per-turn `gate` field, and the state itself refuses an account view unless both gates
-hold for the bound customer (contracts 0.3.0).
+Since ADR 0007 the customer logs in first, and the date of birth and SSN digits are asked for only by
+the step-up form, before money moves (section 3.3). Credential-shaped text typed into the chat is still
+found by code at the runner's entry and masked (`[DOB]`, `[SSN-4]`) before the turn is appended to the
+transcript, so the raw text never enters `ConversationState`, a model or a trace (ADR 0005). Typed values
+are not checked: only the form's values are, and they travel in the per-turn context that
+`identity_gate` reads, outside the state. `identity_gate` records its decision in the per-turn `gate`
+field, and the state itself refuses an account view unless Gate A holds and the customer logged in, for
+the bound customer only, and never in a locked session (contracts 0.3.0, issue #107).
 
 ### 3.3 B3: routine withdrawal
 
 ```mermaid
 sequenceDiagram
     actor C as Customer
-    participant CON as Concierge
-    participant TX as Transaction (code, ADR 0008)
+    participant CON as Concierge (Haiku)
+    participant TX as transaction (code, ADR 0008)
     participant Q as data/quote (code)
     participant CF as confirm (code)
+    participant ID as identity_gate (code)
     participant RU as rules (code)
     participant CO as Compliance (Sonnet)
-    participant AP as approval edge (code)
+    participant AP as approval (code)
     participant EX as execute (code)
     participant DB as desk.db
     C->>CON: "I'd like to withdraw $20,000"
-    CON-->>TX: intent withdrawal, amount 20000.00
+    CON-->>TX: intent withdrawal, amount 20000.00 (checked against the amounts typed, issue 191)
     TX->>Q: quote(customer, 20000.00, as_of)
-    Q-->>TX: free 8,745.06 · excess 11,254.94 · charge 675.30 · net 19,324.70
+    Q-->>TX: free 8,745.06, excess 11,254.94, charge 675.30, net 19,324.70
     TX->>DB: proposal (status quoted, hash)
-    TX-->>C: quote shown · audit: quote_shown
+    TX-->>C: quote shown, audit: quote_shown
     C->>CON: "Yes, go ahead with the $20,000"
     CON-->>CF: explicit yes, amount 20000.00
-    CF->>DB: amount matches, yes came after the quote · status confirmed
-    CF->>RU: proposal
+    CF->>DB: amount matches, yes came after the quote, status confirmed, audit: confirmed
+    CF-->>C: "Before any money moves, please complete the identity check"
+    C->>ID: step-up form: date of birth, last 4 of SSN (per-turn context only, ADR 0007)
+    ID->>DB: check through data/identity, audit: gate_b_passed
+    ID->>RU: confirmed proposal
     RU-->>CO: no flags
-    CO-->>AP: approve + reasons · audit: compliance_decided
-    AP->>DB: approval with token = HMAC(proposal ID + hash) · audit: token_issued
+    CO-->>AP: approve with reasons, audit: compliance_decided
+    AP->>DB: approval with token = HMAC(proposal ID + hash), audit: token_issued
     AP->>EX: proposal_id + token
-    EX->>DB: one DB transaction: check token unused and hash unchanged, insert transaction (proposal_id UNIQUE), mark executed, audit: executed
-    EX-->>C: "Done. Reference TX-..." · outcome EXECUTED
+    EX->>DB: one DB transaction: token unused, hash unchanged, insert transaction (proposal_id UNIQUE), mark executed, audit: executed
+    EX-->>C: "Done. Your reference is TX-..." outcome EXECUTED
 ```
+
+A session that already passed the step-up goes from the yes straight to the rules. A failed step-up
+counts toward the lock: the third failure locks the session and opens a case (D-08).
 
 ### 3.4 B4: human review path
 
@@ -277,47 +283,54 @@ sequenceDiagram
     actor C as Customer
     participant RU as rules (code)
     participant CO as Compliance (Sonnet)
-    participant CASE as Case agent (Haiku)
+    participant AP as approval (code)
+    participant CASE as case (code)
     participant DB as desk.db
-    participant HR as human_review (interrupt)
     actor RV as Reviewer
-    participant EX as execute (code)
-    C->>RU: confirmed proposal for $30,000
-    RU-->>CO: flag: over $25,000 (D-02)
-    CO-->>CASE: escalate + reasons (cannot approve a flagged proposal, FR-11; #137)
-    CASE->>DB: case with scrubbed packet · audit: case_opened
-    CASE-->>C: NEEDS_HUMAN, case reference, what happens next
-    CASE->>HR: graph pauses (state checkpointed)
-    RV->>DB: reads the packet in the review queue
-    RV->>HR: approve
-    HR->>DB: approval by human:reviewer with token · audit: human_decided
-    HR->>EX: resume
-    EX->>DB: execute as in B3, approved_by = human:reviewer
+    participant RQ as review queue (code, outside the graph)
+    C->>RU: confirmed $30,000 proposal, step-up passed
+    RU-->>CO: flag: over $25,000 (D-02), audit: rule_flagged
+    CO-->>AP: escalate with reasons (cannot approve a flagged proposal, FR-11, issue 137)
+    AP-->>CASE: escalate: a person decides (FR-12)
+    CASE->>DB: case with scrubbed packet, audit: case_opened
+    CASE-->>C: NEEDS_HUMAN: "submitted for review (case CASE-...). Nothing has been paid yet."
+    Note over C,DB: the turn ends here, nothing is paused or waiting in the graph
+    RV->>RQ: opens the queue, reads the packet
+    RV->>RQ: approve
+    RQ->>DB: case still open, proposal is this case's own (issue 154), still confirmed
+    RQ->>DB: approval by human:reviewer with token over the proposal hash, audit: human_decided
+    RQ->>DB: execute through the same ledger as B3, approved_by = human:reviewer
 ```
 
-The customer may have left before the reviewer decides. The outcome is recorded on the case. Telling the
-customer later (email, portal) is outside this build.
+A go-ahead on a human-tier quote before the step-up goes straight from `confirm` to `case` (GR-19). The
+review queue is code, not a model: the decision is the person's, and every guard is the one B3 tests.
+Reject and request-info are recorded and move no money; cases with no proposal (locked, third party,
+waiver, hardship, RMD, full surrender) record the decision only. The customer may have left before the
+reviewer decides: the outcome is recorded on the case and shows under "Your cases" at the next login.
+Telling the customer any other way (email, portal) is outside this build.
 
 ### 3.5 B5: fail closed
 
 ```mermaid
 sequenceDiagram
     actor C as Customer
-    participant G as Graph runner
-    participant CO as Compliance
-    participant CASE as Case agent
-    C->>G: confirmed proposal
-    G->>CO: review
-    alt Compliance errors or times out
+    participant G as graph runner (code)
+    participant RU as rules (code)
+    participant CO as Compliance (Sonnet)
+    participant CASE as case (code)
+    C->>G: confirmed proposal, step-up passed
+    alt execution switched off (kill switch, FR-26)
+        G->>RU: proposal
+        RU-->>CO: flag: execution disabled
+        CO-->>CASE: cannot approve a flagged proposal
+        CASE-->>C: NEEDS_HUMAN with case reference, nothing withdrawn
+    else Compliance errors or times out
+        G->>CO: review
         CO--xG: no decision
-        G->>CASE: open case (if the queue is up)
-        G-->>C: UNAVAILABLE: nothing was withdrawn; case reference
-    else a budget runs out (hops, tool calls, 30 s, $0.10)
+        G-->>C: UNAVAILABLE, nothing withdrawn, no case yet (issue 184)
+    else a budget runs out (8 hops, 12 tool calls, 30 s, $0.10)
         G->>G: stop the turn
-        G-->>C: UNAVAILABLE: nothing was withdrawn
-    else execution switched off (kill switch)
-        G->>CASE: open case
-        G-->>C: NEEDS_HUMAN
+        G-->>C: UNAVAILABLE, nothing withdrawn
     end
 ```
 
@@ -330,7 +343,7 @@ flowchart LR
         DOCS[Knowledge documents]
     end
     subgraph P[Desk process: code]
-        EXT[credential extractor] --> SCR[scrubber]
+        EXT[credential masking and step-up form] --> SCR[scrubber]
         GATES[gates, rules, approval, execute]
         IDF[data/identity]
     end
@@ -339,20 +352,18 @@ flowchart LR
     end
     subgraph S[Stores]
         DB[(desk.db: restricted columns in identity only)]
-        CK[(checkpoints: scrubbed)]
     end
     subgraph O[Observability]
         LS[LangSmith: scrubbed traces]
     end
     RV[Reviewer: trusted]
     CUST --> EXT
-    EXT -- dob, last4 in memory only --> IDF
+    EXT -- step-up dob, last4: per-turn context only --> IDF
     SCR --> LLM
     DOCS --> LLM
     LLM -- intent, answers, decisions as data --> GATES
     GATES --> DB
     IDF --> DB
-    SCR --> CK
     SCR --> LS
     RV --> DB
 ```
@@ -362,7 +373,7 @@ flowchart LR
 | Customer text → desk | Credential-shaped text is extracted by code and masked before anything else sees it ([ADR 0005](decisions/0005-credentials-captured-by-code.md)) | GR-09, FR-23 |
 | Desk → model | Only scrubbed text, the account view (no restricted fields) and documents | GR-09 |
 | Documents and model output → desk | Treated as data. Instructions inside them are not followed; routing and authority stay in code | GR-11, NG-09 |
-| Desk → traces and checkpoints | Scrubbed before writing | FR-23 |
+| Desk → traces | Scrubbed before writing; the step-up values never enter the traced state | FR-23 |
 | `identity` table | Read only through `check_challenge` and `age_band`; values never leave the function | PG-04 |
 | Reviewer | Trusted, inside SPR. In this build the review page has no login; production puts it behind SPR's SSO | — |
 
@@ -373,7 +384,7 @@ flowchart LR
     BR[Browser] -- :8530 --> DESK
     subgraph compose[docker compose]
         DESK[desk: Streamlit chat + review queue<br/>LangGraph runtime]
-        VOL[(./var: desk.db, checkpoints.db, chroma/)]
+        VOL[(./var: desk.db, chroma/, cache/)]
         DESK --- VOL
     end
     DESK -- HTTPS --> ANT[Anthropic API]
@@ -383,11 +394,11 @@ flowchart LR
 | Setting | Where | Notes |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | `.env` (local), GitHub secret (evals) | Product runtime and evals only |
-| `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT` | `.env` | Optional; tracing off without them |
+| `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`, `LANGSMITH_TRACING` | `.env` | Optional; traces are sent only when `LANGSMITH_TRACING=true` and a key is set |
 | `DESK_AS_OF` | `.env`, default `2024-12-01` | The business clock (D-04) |
 | `APPROVAL_SECRET` | `.env` | HMAC key for approval tokens; generated per environment |
 | `EXECUTION_ENABLED` | `.env`, default `true` | Kill switch for execution (FR-26) |
-| `DESK_VAR_DIR` | `.env`, default `var` (compose sets `/app/var`) | Where `desk.db`, checkpoints and the Chroma index live |
+| `DESK_VAR_DIR` | `.env`, default `var` (compose sets `/app/var`) | Where `desk.db` and the Chroma index live |
 | `DESK_DEMO_LOGINS` | `.env`, default `true` | Seeds the demo passwords (ADR 0007); anything but `true` turns it off |
 | `MODEL_MAP` | `agents/config/models.yaml` | Model and effort per role (ADR 0004) |
 | Host port | 8530 → container 8501 | Chosen to avoid the other local stacks |
