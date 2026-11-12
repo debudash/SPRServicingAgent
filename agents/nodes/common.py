@@ -174,7 +174,12 @@ def invoke_structured[T: BaseModel](
     model: BaseChatModel, schema: type[T], messages: list[Any], turn: TurnContext
 ) -> T:
     """One model call returning `schema`; token usage is added to the turn."""
-    out: Any = model.with_structured_output(schema, include_raw=True).invoke(messages)
+    # Issue #182: the default method forces a tool call (tool_choice), which Claude Sonnet 5.5 at
+    # high effort refuses with a 400, so every live Compliance review failed closed. The API's
+    # native structured output (json_schema) works on every role's model, checked live.
+    out: Any = model.with_structured_output(schema, include_raw=True, method="json_schema").invoke(
+        messages
+    )
     if isinstance(out, dict) and "parsed" in out:
         raw = out.get("raw")
         meta = getattr(raw, "usage_metadata", None) or {}
